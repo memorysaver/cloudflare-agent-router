@@ -14,7 +14,7 @@ export class LiteLLMContainer extends Container {
 	 * Forward all requests to the LiteLLM container
 	 */
 	async fetch(request: Request): Promise<Response> {
-		// Let LiteLLM handle everything - just forward the request
+		// Simple pass-through to container - Worker handles API key injection
 		return await this.containerFetch(request)
 	}
 }

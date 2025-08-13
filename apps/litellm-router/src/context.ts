@@ -8,6 +8,9 @@ export type Env = SharedHonoEnv & {
 	// Environment variables for LLM APIs
 	OPENAI_API_KEY?: string
 	ANTHROPIC_API_KEY?: string
+	OPENROUTER_API_KEY?: string
+	GROQ_API_KEY?: string
+	CEREBRAS_API_KEY?: string
 	LITELLM_MASTER_KEY?: string
 }
 

@@ -2,61 +2,30 @@
 # This configuration defines the available models and their routing
 # Based on https://github.com/memorysaver/dotfiles/blob/main/litellm/config.yaml
 
+# Model list with wildcard patterns
+# API keys will be injected by Worker for all requests
 model_list:
-  # Anthropic Models (Wildcard pattern for all Claude models)
-  - model_name: anthropic/*
-    litellm_params:
-      model: anthropic/*
-      api_key: os.environ/ANTHROPIC_API_KEY
-      max_tokens: 65536
-      repetition_penalty: 1.05
-      temperature: 0.7
-      top_k: 20
-      top_p: 0.8
-
-  # OpenRouter Models (Access to 100+ models via single API)
+  # OpenRouter wildcard - any openrouter/ model
   - model_name: openrouter/*
     litellm_params:
       model: openrouter/*
-      api_key: os.environ/OPENROUTER_API_KEY
-      max_tokens: 65536
-      repetition_penalty: 1.05
-      temperature: 0.7
-      top_k: 20
-      top_p: 0.8
-
-  # Groq Models (Fast inference)
+      api_base: https://openrouter.ai/api/v1
+      
+  # Groq wildcard - any groq/ model  
   - model_name: groq/*
     litellm_params:
       model: groq/*
-      api_key: os.environ/GROQ_API_KEY
-      max_tokens: 65536
-      repetition_penalty: 1.05
-      temperature: 0.7
-      top_k: 20
-      top_p: 0.8
-
-  # Cerebras Models (High-performance inference)
+      api_base: https://api.groq.com/openai/v1
+      
+  # Anthropic wildcard - any anthropic/ model
+  - model_name: anthropic/*
+    litellm_params:
+      model: anthropic/*
+      
+  # Cerebras wildcard - any cerebras/ model
   - model_name: cerebras/*
     litellm_params:
       model: cerebras/*
-      api_key: os.environ/CEREBRAS_API_KEY
-      max_tokens: 65536
-      repetition_penalty: 1.05
-      temperature: 0.7
-      top_k: 20
-      top_p: 0.8
-
-  # OpenAI Models (Optional - can use OpenRouter instead)
-  - model_name: openai/*
-    litellm_params:
-      model: openai/*
-      api_key: os.environ/OPENAI_API_KEY
-      max_tokens: 65536
-      repetition_penalty: 1.05
-      temperature: 0.7
-      top_k: 20
-      top_p: 0.8
 
 # Router settings for load balancing and reliability
 router_settings:
