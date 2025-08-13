@@ -7,11 +7,12 @@ describe('LiteLLM Router API', () => {
 		expect(res.status).toBe(200)
 
 		const data = await res.json()
-		expect(data).toEqual({
-			status: 'healthy',
-			service: 'LiteLLM Router',
-			version: '1.0.0',
-		})
+		expect(data).toHaveProperty('status', 'healthy')
+		expect(data).toHaveProperty('service', 'LiteLLM Router')
+		expect(data).toHaveProperty('version', '1.0.0')
+		expect(data).toHaveProperty('keys')
+		// API key availability depends on environment, so just verify structure
+		expect(typeof (data as any).keys).toBe('object')
 	})
 
 	it('forwards root path to LiteLLM (Swagger UI)', async () => {
