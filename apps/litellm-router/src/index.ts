@@ -21,7 +21,16 @@ const app = new Hono<App>()
 	.onError(useOnError())
 	.notFound(useNotFound())
 
-	// Forward ALL requests to LiteLLM container
+	// Worker health check (minimal infrastructure monitoring)
+	.get('/worker-health', (c) => {
+		return c.json({
+			status: 'healthy',
+			service: 'LiteLLM Router',
+			version: '1.0.0',
+		})
+	})
+
+	// Everything else goes to LiteLLM container
 	.all('*', async (c) => {
 		try {
 			if (!c.env.LITELLM_CONTAINER) {
