@@ -1,0 +1,13 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "cloudflare-agent-router-web",
+	"main": ".output/server/index.mjs",
+	"compatibility_date": "2024-11-13",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": {
+		"directory": ".output/public"
+	},
+	"observability": {
+		"enabled": true
+	}
+}
