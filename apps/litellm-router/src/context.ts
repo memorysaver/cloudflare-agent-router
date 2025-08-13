@@ -5,7 +5,10 @@ export type Env = SharedHonoEnv & {
 	// Container bindings (optional for basic testing)
 	LITELLM_CONTAINER?: DurableObjectNamespace
 
-	// Environment variables for LLM APIs
+	// BYOK Router Configuration
+	CLOUDFLARE_AGENT_ROUTER_API_KEY?: string
+
+	// Environment variables for LLM APIs (internal keys for premium mode)
 	OPENAI_API_KEY?: string
 	ANTHROPIC_API_KEY?: string
 	OPENROUTER_API_KEY?: string

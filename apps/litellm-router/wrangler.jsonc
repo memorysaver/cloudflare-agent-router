@@ -35,7 +35,10 @@
 		"SENTRY_RELEASE": "unknown", // overridden during deployment
 		"LITELLM_MASTER_KEY": "sk-1234", // default master key for authentication
 
-		// AI Provider API Keys - set these in your .env file
+		// BYOK Router Configuration
+		"CLOUDFLARE_AGENT_ROUTER_API_KEY": "", // Premium router key for internal API access
+
+		// AI Provider API Keys (Internal - for Premium Mode) - set these in your .env file
 		"ANTHROPIC_API_KEY": "", // Anthropic Claude models
 		"OPENROUTER_API_KEY": "", // OpenRouter (100+ models via single API)
 		"GROQ_API_KEY": "", // Groq fast inference

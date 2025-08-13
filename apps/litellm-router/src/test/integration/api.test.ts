@@ -10,9 +10,11 @@ describe('LiteLLM Router API', () => {
 		expect(data).toHaveProperty('status', 'healthy')
 		expect(data).toHaveProperty('service', 'LiteLLM Router')
 		expect(data).toHaveProperty('version', '1.0.0')
-		expect(data).toHaveProperty('keys')
-		// API key availability depends on environment, so just verify structure
-		expect(typeof (data as any).keys).toBe('object')
+		expect(data).toHaveProperty('modes')
+		expect(data).toHaveProperty('internal_keys')
+		// BYOK capabilities should be present
+		expect((data as any).modes).toHaveProperty('byok_supported', true)
+		expect(typeof (data as any).internal_keys).toBe('object')
 	})
 
 	it('forwards root path to LiteLLM (Swagger UI)', async () => {
@@ -37,7 +39,10 @@ describe('LiteLLM Router API', () => {
 		for (const endpoint of endpoints) {
 			const res = await SELF.fetch(`https://example.com${endpoint}`, {
 				method: endpoint === '/v1/models' ? 'GET' : 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: 'Bearer test-token', // Required for authentication
+				},
 				body:
 					endpoint.startsWith('/v1/') && endpoint !== '/v1/models'
 						? JSON.stringify({ model: 'test', messages: [{ role: 'user', content: 'test' }] })
@@ -53,12 +58,36 @@ describe('LiteLLM Router API', () => {
 	})
 
 	it('returns proper error when container not configured', async () => {
-		const res = await SELF.fetch('https://example.com/any-endpoint')
+		const res = await SELF.fetch('https://example.com/any-endpoint', {
+			headers: {
+				Authorization: 'Bearer test-token', // Required for authentication
+			},
+		})
 		expect(res.status).toBe(503)
 
 		const data = await res.json()
 		expect(data).toHaveProperty('error')
 		expect(data).toHaveProperty('message')
 		expect((data as any).error).toBe('Container not configured')
+	})
+
+	it('handles missing authorization appropriately', async () => {
+		const res = await SELF.fetch('https://example.com/v1/chat/completions', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ model: 'test', messages: [{ role: 'user', content: 'test' }] }),
+		})
+
+		// In test environment without container: 503 (container not configured)
+		// In production with container: 401 (authorization required)
+		expect([401, 503]).toContain(res.status)
+
+		const data = await res.json()
+
+		if (res.status === 401) {
+			expect((data as any).error).toBe('Authorization required')
+		} else if (res.status === 503) {
+			expect((data as any).error).toBe('Container not configured')
+		}
 	})
 })
