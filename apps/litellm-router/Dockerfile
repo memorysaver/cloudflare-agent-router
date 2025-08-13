@@ -1,24 +1,23 @@
-# Build minimal LiteLLM container under 2GB
+# Use the official litellm/litellm image as base if it exists and is smaller
+# Otherwise fall back to our optimized approach
 FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies efficiently
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Install LiteLLM
-RUN pip install --no-cache-dir litellm
-
-# Copy LiteLLM configuration
+# Copy LiteLLM configuration first
 COPY litellm_config.yaml ./config.yaml
 
-# Expose the port LiteLLM runs on
+# Install LiteLLM with minimal dependencies
+RUN pip install --no-cache-dir litellm[proxy]==1.75.5.post1 \
+    # Verify litellm command exists
+    && python -c "import litellm; print('LiteLLM installed successfully')" \
+    # Clean up
+    && rm -rf /root/.cache/pip \
+    && find /usr/local -name '*.pyc' -delete
+
+# Expose port
 EXPOSE 4000
 
-# Run LiteLLM proxy with configuration
-CMD ["litellm", "--config", "/app/config.yaml", "--port", "4000", "--detailed_debug"]
+# Run LiteLLM with production settings
+CMD ["litellm", "--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
