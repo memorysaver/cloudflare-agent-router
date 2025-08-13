@@ -1,38 +1,62 @@
 # LiteLLM Configuration for Cloudflare Router
 # This configuration defines the available models and their routing
+# Based on https://github.com/memorysaver/dotfiles/blob/main/litellm/config.yaml
 
 model_list:
-  # OpenAI Models
-  - model_name: gpt-4
+  # Anthropic Models (Wildcard pattern for all Claude models)
+  - model_name: anthropic/*
     litellm_params:
-      model: openai/gpt-4
-      api_key: os.environ/OPENAI_API_KEY
-
-  - model_name: gpt-4-turbo
-    litellm_params:
-      model: openai/gpt-4-turbo
-      api_key: os.environ/OPENAI_API_KEY
-
-  - model_name: gpt-3.5-turbo
-    litellm_params:
-      model: openai/gpt-3.5-turbo
-      api_key: os.environ/OPENAI_API_KEY
-
-  # Anthropic Models
-  - model_name: claude-3-opus
-    litellm_params:
-      model: anthropic/claude-3-opus-20240229
+      model: anthropic/*
       api_key: os.environ/ANTHROPIC_API_KEY
+      max_tokens: 65536
+      repetition_penalty: 1.05
+      temperature: 0.7
+      top_k: 20
+      top_p: 0.8
 
-  - model_name: claude-3-sonnet
+  # OpenRouter Models (Access to 100+ models via single API)
+  - model_name: openrouter/*
     litellm_params:
-      model: anthropic/claude-3-sonnet-20240229
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: openrouter/*
+      api_key: os.environ/OPENROUTER_API_KEY
+      max_tokens: 65536
+      repetition_penalty: 1.05
+      temperature: 0.7
+      top_k: 20
+      top_p: 0.8
 
-  - model_name: claude-3-haiku
+  # Groq Models (Fast inference)
+  - model_name: groq/*
     litellm_params:
-      model: anthropic/claude-3-haiku-20240307
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: groq/*
+      api_key: os.environ/GROQ_API_KEY
+      max_tokens: 65536
+      repetition_penalty: 1.05
+      temperature: 0.7
+      top_k: 20
+      top_p: 0.8
+
+  # Cerebras Models (High-performance inference)
+  - model_name: cerebras/*
+    litellm_params:
+      model: cerebras/*
+      api_key: os.environ/CEREBRAS_API_KEY
+      max_tokens: 65536
+      repetition_penalty: 1.05
+      temperature: 0.7
+      top_k: 20
+      top_p: 0.8
+
+  # OpenAI Models (Optional - can use OpenRouter instead)
+  - model_name: openai/*
+    litellm_params:
+      model: openai/*
+      api_key: os.environ/OPENAI_API_KEY
+      max_tokens: 65536
+      repetition_penalty: 1.05
+      temperature: 0.7
+      top_k: 20
+      top_p: 0.8
 
 # Router settings for load balancing and reliability
 router_settings:

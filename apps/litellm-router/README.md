@@ -30,10 +30,16 @@ Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
 
 2. **Environment Variables**: Set up your API keys
    ```bash
-   # Add to your shell profile or .env file
-   export OPENAI_API_KEY="your-openai-key"
-   export ANTHROPIC_API_KEY="your-anthropic-key"
-   export LITELLM_MASTER_KEY="sk-1234"  # Optional, defaults to sk-1234
+   # Copy the example environment file
+   cp .env.example .env
+   
+   # Edit .env file with your API keys
+   # Get API keys from:
+   # - Anthropic: https://console.anthropic.com/
+   # - OpenRouter: https://openrouter.ai/keys (Recommended - 100+ models)
+   # - Groq: https://console.groq.com/keys
+   # - Cerebras: https://cloud.cerebras.ai/
+   # - OpenAI: https://platform.openai.com/api-keys
    ```
 
 ### Development Workflow
@@ -64,19 +70,46 @@ Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
 
 4. **Testing Locally**
    ```bash
-   # Health check
+   # Basic health check
    curl http://localhost:8787/health
    
-   # List available models
+   # LiteLLM health checks
+   curl http://localhost:8787/health/litellm      # Comprehensive LLM model health
+   curl http://localhost:8787/health/readiness    # Proxy readiness check
+   curl http://localhost:8787/health/liveliness   # Basic alive check
+   
+   # List available models (requires API keys)
    curl http://localhost:8787/v1/models
    
-   # Chat completion
+   # Test with different providers (examples)
+   # Anthropic Claude
    curl -X POST http://localhost:8787/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer sk-1234" \
      -d '{
-       "model": "gpt-3.5-turbo",
-       "messages": [{"role": "user", "content": "Hello!"}]
+       "model": "anthropic/claude-3-haiku-20240307",
+       "messages": [{"role": "user", "content": "Hello!"}],
+       "max_tokens": 100
+     }'
+   
+   # OpenRouter (100+ models)
+   curl -X POST http://localhost:8787/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer sk-1234" \
+     -d '{
+       "model": "openrouter/anthropic/claude-3-haiku",
+       "messages": [{"role": "user", "content": "Hello!"}],
+       "max_tokens": 100
+     }'
+   
+   # Groq (fast inference)
+   curl -X POST http://localhost:8787/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer sk-1234" \
+     -d '{
+       "model": "groq/llama-3.1-8b-instant",
+       "messages": [{"role": "user", "content": "Hello!"}],
+       "max_tokens": 100
      }'
    ```
 
@@ -110,8 +143,9 @@ The LiteLLM container is configured via:
 
 ## Testing
 
+### Unit & Integration Tests
 ```bash
-# Run all tests
+# Run all tests (without container)
 just test
 
 # Run tests for this worker only
@@ -121,7 +155,34 @@ pnpm turbo -F litellm-router test
 pnpm vitest src/test/integration/api.test.ts
 ```
 
-Note: Tests run without the container to avoid Docker dependency in CI. The endpoints return 503 when container is not configured, which is expected behavior in test mode.
+### Real LLM API Tests
+For testing with actual LLM providers:
+
+```bash
+# 1. Set up environment
+cp .env.example .env
+# Edit .env with your API keys
+
+# 2. Start container
+pnpm wrangler dev
+
+# 3. Run real LLM tests
+pnpm vitest src/test/integration/real-llm.test.ts
+```
+
+**Test Types:**
+- **Basic Tests**: Worker routing without container (CI/CD safe)
+- **Container Tests**: Health checks with container running
+- **Real LLM Tests**: Actual API calls to validate configuration
+
+**What Real LLM Tests Validate:**
+- ✅ API keys are working
+- ✅ Model configurations are correct
+- ✅ Provider routing works
+- ✅ LiteLLM proxy functionality
+- ✅ Wildcard model patterns
+
+Note: Basic tests run without the container to avoid Docker dependency in CI. Real LLM tests require container + API keys.
 
 ## Deployment
 
@@ -142,16 +203,32 @@ Before deployment, ensure:
 
 ### Supported Models
 
-The router supports models from:
-- **OpenAI**: gpt-4, gpt-4-turbo, gpt-3.5-turbo
-- **Anthropic**: claude-3-opus, claude-3-sonnet, claude-3-haiku
+The router supports models from multiple providers using wildcard patterns:
 
-Models are configured in `litellm_config.yaml`.
+- **Anthropic**: `anthropic/*` (All Claude models: opus, sonnet, haiku, etc.)
+- **OpenRouter**: `openrouter/*` (100+ models via single API key)
+- **Groq**: `groq/*` (Fast inference: Llama, Mixtral, etc.)
+- **Cerebras**: `cerebras/*` (High-performance inference)
+- **OpenAI**: `openai/*` (GPT models - optional, can use OpenRouter)
+
+**Configuration Features:**
+- Wildcard model patterns for easy model access
+- Consistent parameters across providers (max_tokens: 65536, temperature: 0.7)
+- Environment variable-based API key management
+- Load balancing and retry policies
+
+Models are configured in `litellm_config.yaml` based on your dotfiles configuration.
 
 ### API Endpoints
 
-- `GET /`: Health check
-- `GET /health`: Detailed health status
+**Health & Status:**
+- `GET /`: Basic health check
+- `GET /health`: Worker health status
+- `GET /health/litellm`: Comprehensive LLM model health check
+- `GET /health/readiness`: LiteLLM proxy readiness check
+- `GET /health/liveliness`: LiteLLM basic alive check
+
+**OpenAI-Compatible API:**
 - `GET /v1/models`: List available models
 - `POST /v1/chat/completions`: Chat completions (streaming supported)
 - `POST /v1/completions`: Legacy completions

@@ -1,0 +1,41 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "litellm-router-test",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-04-28",
+	"compatibility_flags": ["nodejs_compat"],
+	"routes": [],
+	"logpush": true,
+	"observability": {
+		"enabled": true
+	},
+	// Containers are disabled for testing to avoid "Build ID should be set" error
+	// "containers": [
+	// 	{
+	// 		"max_instances": 10,
+	// 		"class_name": "LiteLLMContainer",
+	// 		"image": "./Dockerfile"
+	// 	}
+	// ],
+	// "durable_objects": {
+	// 	"bindings": [
+	// 		{
+	// 			"name": "LITELLM_CONTAINER",
+	// 			"class_name": "LiteLLMContainer"
+	// 		}
+	// 	]
+	// },
+	// "migrations": [
+	// 	{
+	// 		"tag": "v1",
+	// 		"new_sqlite_classes": ["LiteLLMContainer"]
+	// 	}
+	// ],
+	"vars": {
+		"ENVIRONMENT": "test",
+		"SENTRY_RELEASE": "test",
+		"OPENAI_API_KEY": "",
+		"ANTHROPIC_API_KEY": "",
+		"LITELLM_MASTER_KEY": "sk-test-1234"
+	}
+}

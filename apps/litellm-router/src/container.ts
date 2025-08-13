@@ -1,10 +1,7 @@
 import { Container } from '@cloudflare/containers'
 
 /**
- * LiteLLM Container - Manages the lifecycle of the LiteLLM proxy server
- *
- * This container runs the LiteLLM Python proxy that handles routing
- * requests to multiple LLM providers (OpenAI, Anthropic, etc.)
+ * LiteLLM Container - Simple proxy to LiteLLM running on port 4000
  */
 export class LiteLLMContainer extends Container {
 	// LiteLLM proxy runs on port 4000 by default
@@ -13,35 +10,11 @@ export class LiteLLMContainer extends Container {
 	// Keep container alive for 10 minutes after last request
 	sleepAfter = '10m'
 
-	// Environment variables will be passed to the container at runtime
-	// These will be set from the Worker's environment bindings
-
-	override onStart() {
-		console.log('LiteLLM container started successfully')
-	}
-
-	override onStop() {
-		console.log('LiteLLM container stopped')
-	}
-
-	override onError(error: unknown) {
-		console.error('LiteLLM container error:', error)
-	}
-
 	/**
-	 * Forward request to the LiteLLM proxy running inside the container
+	 * Forward all requests to the LiteLLM container
 	 */
-	async containerFetch(path: string, options: RequestInit = {}): Promise<Response> {
-		// Create a Request object with the proper configuration
-		const request = new Request(`http://container:${this.defaultPort}${path}`, {
-			...options,
-			headers: {
-				'Content-Type': 'application/json',
-				...options.headers,
-			},
-		})
-
-		// Use the Container's fetch method to communicate with the container
-		return await this.fetch(request)
+	async fetch(request: Request): Promise<Response> {
+		// Let LiteLLM handle everything - just forward the request
+		return await this.containerFetch(request)
 	}
 }

@@ -80,3 +80,55 @@ describe('LiteLLM Router API', () => {
 		expect(res.status).toBe(404)
 	})
 })
+
+describe('LiteLLM Health Checks', () => {
+	it('comprehensive health check endpoint exists', async () => {
+		const res = await SELF.fetch('https://example.com/health/litellm')
+		
+		// In test environment without container, should return 503 with proper error message
+		expect(res.status).toBe(503)
+		
+		const data = (await res.json()) as { status: string; message: string }
+		expect(data.status).toBe('unhealthy')
+		expect(data.message).toContain('LiteLLM container is not available')
+	})
+
+	it('readiness check endpoint exists', async () => {
+		const res = await SELF.fetch('https://example.com/health/readiness')
+		
+		// In test environment without container, should return 503 with proper error message
+		expect(res.status).toBe(503)
+		
+		const data = (await res.json()) as { status: string; message: string }
+		expect(data.status).toBe('not_ready')
+		expect(data.message).toContain('LiteLLM container is not configured')
+	})
+
+	it('liveliness check endpoint exists', async () => {
+		const res = await SELF.fetch('https://example.com/health/liveliness')
+		
+		// In test environment without container, should return 503 with proper error message
+		expect(res.status).toBe(503)
+		
+		const data = (await res.json()) as { status: string; message: string }
+		expect(data.status).toBe('not_alive')
+		expect(data.message).toContain('LiteLLM container is not configured')
+	})
+
+	it('health endpoints return proper error structure when container unavailable', async () => {
+		const endpoints = ['/health/litellm', '/health/readiness', '/health/liveliness']
+		
+		for (const endpoint of endpoints) {
+			const res = await SELF.fetch(`https://example.com${endpoint}`)
+			
+			expect(res.status).toBe(503)
+			expect(res.headers.get('content-type')).toContain('application/json')
+			
+			const data = (await res.json()) as { status: string; message: string }
+			expect(data).toHaveProperty('status')
+			expect(data).toHaveProperty('message')
+			expect(typeof data.status).toBe('string')
+			expect(typeof data.message).toBe('string')
+		}
+	})
+})

@@ -33,8 +33,13 @@
 	"vars": {
 		"ENVIRONMENT": "development", // overridden during deployment
 		"SENTRY_RELEASE": "unknown", // overridden during deployment
-		"OPENAI_API_KEY": "", // set this in your environment
-		"ANTHROPIC_API_KEY": "", // set this in your environment
-		"LITELLM_MASTER_KEY": "sk-1234" // default master key for authentication
+		"LITELLM_MASTER_KEY": "sk-1234", // default master key for authentication
+		
+		// AI Provider API Keys - set these in your .env file
+		"ANTHROPIC_API_KEY": "", // Anthropic Claude models
+		"OPENROUTER_API_KEY": "", // OpenRouter (100+ models via single API)
+		"GROQ_API_KEY": "", // Groq fast inference
+		"CEREBRAS_API_KEY": "", // Cerebras high-performance inference
+		"OPENAI_API_KEY": "" // OpenAI (optional - can use OpenRouter instead)
 	}
 }
