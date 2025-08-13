@@ -1,0 +1,40 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "litellm-router",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-04-28",
+	"compatibility_flags": ["nodejs_compat"],
+	"routes": [],
+	"logpush": true,
+	"observability": {
+		"enabled": true
+	},
+	"containers": [
+		{
+			"max_instances": 10,
+			"class_name": "LiteLLMContainer",
+			"image": "./Dockerfile"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "LITELLM_CONTAINER",
+				"class_name": "LiteLLMContainer"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["LiteLLMContainer"]
+		}
+	],
+	"vars": {
+		"ENVIRONMENT": "development", // overridden during deployment
+		"SENTRY_RELEASE": "unknown", // overridden during deployment
+		"OPENAI_API_KEY": "", // set this in your environment
+		"ANTHROPIC_API_KEY": "", // set this in your environment
+		"LITELLM_MASTER_KEY": "sk-1234" // default master key for authentication
+	}
+}
