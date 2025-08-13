@@ -5,6 +5,7 @@ A Cloudflare Worker that provides a unified OpenAI-compatible API gateway for mu
 ## Overview
 
 This service acts as a proxy router that:
+
 - Provides OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/models`, etc.)
 - Routes requests to multiple LLM providers (OpenAI, Anthropic, etc.)
 - Runs LiteLLM in a Cloudflare Container for Python-based routing logic
@@ -29,10 +30,11 @@ Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
    - Ensure Docker daemon is running before starting development
 
 2. **Environment Variables**: Set up your API keys
+
    ```bash
    # Copy the example environment file
    cp .env.example .env
-   
+
    # Edit .env file with your API keys
    # Get API keys from:
    # - Anthropic: https://console.anthropic.com/
@@ -45,19 +47,21 @@ Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
 ### Development Workflow
 
 1. **Install Dependencies**
+
    ```bash
    # From the monorepo root
    just install
    ```
 
 2. **Start Local Development**
+
    ```bash
    # From the monorepo root
    just dev
-   
+
    # Or run this specific worker only
    pnpm turbo -F litellm-router dev
-   
+
    # Alternative: Run wrangler directly (if turbo has issues)
    cd apps/litellm-router && pnpm wrangler dev
    ```
@@ -69,18 +73,19 @@ Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
    - Container is accessible at internal port 4000
 
 4. **Testing Locally**
+
    ```bash
    # Basic health check
    curl http://localhost:8787/health
-   
+
    # LiteLLM health checks
    curl http://localhost:8787/health/litellm      # Comprehensive LLM model health
    curl http://localhost:8787/health/readiness    # Proxy readiness check
    curl http://localhost:8787/health/liveliness   # Basic alive check
-   
+
    # List available models (requires API keys)
    curl http://localhost:8787/v1/models
-   
+
    # Test with different providers (examples)
    # Anthropic Claude
    curl -X POST http://localhost:8787/v1/chat/completions \
@@ -91,7 +96,7 @@ Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
        "messages": [{"role": "user", "content": "Hello!"}],
        "max_tokens": 100
      }'
-   
+
    # OpenRouter (100+ models)
    curl -X POST http://localhost:8787/v1/chat/completions \
      -H "Content-Type: application/json" \
@@ -101,7 +106,7 @@ Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
        "messages": [{"role": "user", "content": "Hello!"}],
        "max_tokens": 100
      }'
-   
+
    # Groq (fast inference)
    curl -X POST http://localhost:8787/v1/chat/completions \
      -H "Content-Type: application/json" \
@@ -116,6 +121,7 @@ Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
 ### Container Configuration
 
 The LiteLLM container is configured via:
+
 - `Dockerfile`: Uses official LiteLLM image
 - `litellm_config.yaml`: Defines available models and routing rules
 - `wrangler.jsonc`: Container and Durable Object bindings
@@ -123,20 +129,24 @@ The LiteLLM container is configured via:
 ### Troubleshooting
 
 **"Build ID should be set if containers are defined" error:**
+
 - This happens when using Vite development mode with containers
 - **Solution**: The package.json has been updated to use `wrangler dev` instead of `vite dev`
 - **Alternative**: Run `cd apps/litellm-router && pnpm wrangler dev` directly
 
 **Container not starting:**
+
 - Ensure Docker Desktop is running
 - Check Docker daemon status: `docker info`
 - Verify container logs in Docker Desktop
 
 **API key errors:**
+
 - Ensure environment variables are set in your shell
 - Check `wrangler.jsonc` vars section for default values
 
 **Port conflicts:**
+
 - LiteLLM container uses internal port 4000
 - Worker dev server typically uses port 8787
 - Change ports if needed in `wrangler dev --port <port>`
@@ -144,6 +154,7 @@ The LiteLLM container is configured via:
 ## Testing
 
 ### Unit & Integration Tests
+
 ```bash
 # Run all tests (without container)
 just test
@@ -156,6 +167,7 @@ pnpm vitest src/test/integration/api.test.ts
 ```
 
 ### Real LLM API Tests
+
 For testing with actual LLM providers:
 
 ```bash
@@ -171,11 +183,13 @@ pnpm vitest src/test/integration/real-llm.test.ts
 ```
 
 **Test Types:**
+
 - **Basic Tests**: Worker routing without container (CI/CD safe)
 - **Container Tests**: Health checks with container running
 - **Real LLM Tests**: Actual API calls to validate configuration
 
 **What Real LLM Tests Validate:**
+
 - ✅ API keys are working
 - ✅ Model configurations are correct
 - ✅ Provider routing works
@@ -195,6 +209,7 @@ pnpm turbo -F litellm-router deploy
 ```
 
 Before deployment, ensure:
+
 - `CLOUDFLARE_API_TOKEN` is set
 - `CLOUDFLARE_ACCOUNT_ID` is set
 - API keys are configured in Cloudflare dashboard
@@ -212,6 +227,7 @@ The router supports models from multiple providers using wildcard patterns:
 - **OpenAI**: `openai/*` (GPT models - optional, can use OpenRouter)
 
 **Configuration Features:**
+
 - Wildcard model patterns for easy model access
 - Consistent parameters across providers (max_tokens: 65536, temperature: 0.7)
 - Environment variable-based API key management
@@ -222,6 +238,7 @@ Models are configured in `litellm_config.yaml` based on your dotfiles configurat
 ### API Endpoints
 
 **Health & Status:**
+
 - `GET /`: Basic health check
 - `GET /health`: Worker health status
 - `GET /health/litellm`: Comprehensive LLM model health check
@@ -229,6 +246,7 @@ Models are configured in `litellm_config.yaml` based on your dotfiles configurat
 - `GET /health/liveliness`: LiteLLM basic alive check
 
 **OpenAI-Compatible API:**
+
 - `GET /v1/models`: List available models
 - `POST /v1/chat/completions`: Chat completions (streaming supported)
 - `POST /v1/completions`: Legacy completions

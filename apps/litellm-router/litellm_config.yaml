@@ -10,18 +10,18 @@ model_list:
     litellm_params:
       model: openrouter/*
       api_base: https://openrouter.ai/api/v1
-      
-  # Groq wildcard - any groq/ model  
+
+  # Groq wildcard - any groq/ model
   - model_name: groq/*
     litellm_params:
       model: groq/*
       api_base: https://api.groq.com/openai/v1
-      
+
   # Anthropic wildcard - any anthropic/ model
   - model_name: anthropic/*
     litellm_params:
       model: anthropic/*
-      
+
   # Cerebras wildcard - any cerebras/ model
   - model_name: cerebras/*
     litellm_params:

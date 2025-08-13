@@ -18,9 +18,9 @@ describe('LiteLLM Router API', () => {
 		const res = await SELF.fetch('https://example.com/')
 		// Should return 503 when container not available, but proves forwarding works
 		expect(res.status).toBe(503)
-		
+
 		const data = await res.json()
-		expect(data.error).toBe('Container not configured')
+		expect((data as any).error).toBe('Container not configured')
 	})
 
 	it('forwards requests to container when available', async () => {
@@ -37,26 +37,27 @@ describe('LiteLLM Router API', () => {
 			const res = await SELF.fetch(`https://example.com${endpoint}`, {
 				method: endpoint === '/v1/models' ? 'GET' : 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: endpoint.startsWith('/v1/') && endpoint !== '/v1/models'
-					? JSON.stringify({ model: 'test', messages: [{ role: 'user', content: 'test' }] })
-					: undefined,
+				body:
+					endpoint.startsWith('/v1/') && endpoint !== '/v1/models'
+						? JSON.stringify({ model: 'test', messages: [{ role: 'user', content: 'test' }] })
+						: undefined,
 			})
 
 			// Should return 503 when container not available in test mode
 			expect(res.status).toBe(503)
-			
+
 			const data = await res.json()
-			expect(data.error).toBe('Container not configured')
+			expect((data as any).error).toBe('Container not configured')
 		}
 	})
 
 	it('returns proper error when container not configured', async () => {
 		const res = await SELF.fetch('https://example.com/any-endpoint')
 		expect(res.status).toBe(503)
-		
+
 		const data = await res.json()
 		expect(data).toHaveProperty('error')
 		expect(data).toHaveProperty('message')
-		expect(data.error).toBe('Container not configured')
+		expect((data as any).error).toBe('Container not configured')
 	})
 })

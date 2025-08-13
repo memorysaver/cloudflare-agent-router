@@ -32,7 +32,7 @@ const app = new Hono<App>()
 				openrouter_length: c.env.OPENROUTER_API_KEY?.length || 0,
 				anthropic_available: !!c.env.ANTHROPIC_API_KEY,
 				groq_available: !!c.env.GROQ_API_KEY,
-			}
+			},
 		})
 	})
 
@@ -55,15 +55,15 @@ const app = new Hono<App>()
 
 			// For LiteLLM requests, inject the API key directly into the request body
 			let modifiedRequest = c.req.raw
-			
+
 			if (c.req.path.includes('/v1/chat/completions') || c.req.path.includes('/v1/completions')) {
 				try {
 					// Parse the request body to inject API key
 					const requestBody = await c.req.json()
 					const model = requestBody.model || ''
-					
+
 					console.log(`Worker: Processing ${model} request, injecting API key`)
-					
+
 					// Determine which API key to use based on model
 					let apiKey = null
 					if (model.startsWith('openrouter/')) {
@@ -82,13 +82,13 @@ const app = new Hono<App>()
 						apiKey = c.env.OPENAI_API_KEY
 						console.log('Worker: Using OPENAI_API_KEY')
 					}
-					
+
 					// Add api_key to the request if we have one
 					if (apiKey) {
 						requestBody.api_key = apiKey
 						console.log('Worker: API key injected into request body')
 					}
-					
+
 					// Create new request with modified body
 					modifiedRequest = new Request(c.req.raw.url, {
 						method: c.req.raw.method,

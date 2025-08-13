@@ -34,7 +34,7 @@
 		"ENVIRONMENT": "development", // overridden during deployment
 		"SENTRY_RELEASE": "unknown", // overridden during deployment
 		"LITELLM_MASTER_KEY": "sk-1234", // default master key for authentication
-		
+
 		// AI Provider API Keys - set these in your .env file
 		"ANTHROPIC_API_KEY": "", // Anthropic Claude models
 		"OPENROUTER_API_KEY": "", // OpenRouter (100+ models via single API)
