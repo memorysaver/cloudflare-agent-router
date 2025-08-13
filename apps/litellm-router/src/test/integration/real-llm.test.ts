@@ -60,7 +60,7 @@ describe('Real LLM API Configuration Tests', () => {
 
 	const isContainerRunning = async () => {
 		try {
-			const res = await fetch('http://localhost:8787/health')
+			const res = await fetch('http://localhost:8787/worker-health')
 			return res.status === 200
 		} catch {
 			return false
@@ -77,6 +77,52 @@ describe('Real LLM API Configuration Tests', () => {
 		}
 
 		expect(running).toBe(true)
+	})
+
+	it('validates Worker health and API key status', async () => {
+		const running = await isContainerRunning()
+		if (!running) {
+			console.log('⏭️ Skipping - container not running')
+			return
+		}
+
+		console.log('🧪 Testing Worker health and API key availability...')
+		
+		try {
+			const res = await fetch('http://localhost:8787/worker-health')
+			const data = await res.json()
+			
+			console.log(`📊 Worker Health Result:`, {
+				status: res.status,
+				service: data.service,
+				openrouter_available: data.keys?.openrouter_available,
+				groq_available: data.keys?.groq_available
+			})
+
+			if (res.status === 200) {
+				console.log('✅ Worker health check working!')
+				expect(data).toHaveProperty('status', 'healthy')
+				expect(data).toHaveProperty('service', 'LiteLLM Router')
+				expect(data).toHaveProperty('keys')
+				
+				// Check API key availability
+				if (data.keys?.openrouter_available) {
+					console.log('✅ OpenRouter API key detected')
+				} else {
+					console.log('⚠️ OpenRouter API key not available')
+				}
+				
+				if (data.keys?.groq_available) {
+					console.log('✅ Groq API key detected')
+				} else {
+					console.log('⚠️ Groq API key not available')
+				}
+			} else {
+				console.log('❌ Worker health check failed:', data)
+			}
+		} catch (error) {
+			console.log('❌ Worker health check error:', error)
+		}
 	})
 
 	it('tests Anthropic Claude configuration', async () => {
@@ -108,59 +154,65 @@ describe('Real LLM API Configuration Tests', () => {
 		}
 	})
 
-	it('tests OpenRouter configuration', async () => {
+	it('tests OpenRouter configuration with GLM-4.5-Air', async () => {
 		const running = await isContainerRunning()
 		if (!running) {
 			console.log('⏭️ Skipping - container not running')
 			return
 		}
 
-		console.log('🧪 Testing OpenRouter configuration...')
+		console.log('🧪 Testing OpenRouter GLM-4.5-Air configuration...')
 		
-		const result = await testLLMConnection('openrouter/anthropic/claude-3-haiku', 'OpenRouter')
+		const result = await testLLMConnection('openrouter/z-ai/glm-4.5-air', 'OpenRouter')
 		
-		console.log(`📊 OpenRouter Result:`, {
+		console.log(`📊 OpenRouter GLM Result:`, {
 			status: result.status,
 			provider: result.provider,
 			model: result.model
 		})
 
 		if (result.status === 200) {
-			console.log('✅ OpenRouter API key working!')
+			console.log('✅ OpenRouter API key working with GLM-4.5-Air!')
 			expect(result.data).toHaveProperty('choices')
+			expect(result.data).toHaveProperty('model')
+			expect(result.data.model).toContain('glm-4.5')
 		} else if (result.status === 401) {
 			console.log('🔑 OpenRouter API key not set or invalid')
 			console.log('💡 Set OPENROUTER_API_KEY in your .env file')
 		} else {
-			console.log('❌ OpenRouter configuration issue:', result.data)
+			console.log('❌ OpenRouter GLM configuration issue:', result.data)
 		}
 	})
 
-	it('tests Groq configuration', async () => {
+	it('tests Groq configuration with GPT-OSS-20B', async () => {
 		const running = await isContainerRunning()
 		if (!running) {
 			console.log('⏭️ Skipping - container not running')
 			return
 		}
 
-		console.log('🧪 Testing Groq configuration...')
+		console.log('🧪 Testing Groq GPT-OSS-20B configuration...')
 		
-		const result = await testLLMConnection('groq/llama-3.1-8b-instant', 'Groq')
+		const result = await testLLMConnection('groq/openai/gpt-oss-20b', 'Groq')
 		
-		console.log(`📊 Groq Result:`, {
+		console.log(`📊 Groq GPT-OSS Result:`, {
 			status: result.status,
 			provider: result.provider,
 			model: result.model
 		})
 
 		if (result.status === 200) {
-			console.log('✅ Groq API key working!')
+			console.log('✅ Groq API key working with GPT-OSS-20B!')
 			expect(result.data).toHaveProperty('choices')
+			expect(result.data).toHaveProperty('model')
+			expect(result.data.model).toContain('gpt-oss-20b')
+			// Groq-specific response fields
+			expect(result.data).toHaveProperty('x_groq')
 		} else if (result.status === 401) {
 			console.log('🔑 Groq API key not set or invalid')
 			console.log('💡 Set GROQ_API_KEY in your .env file')
 		} else {
-			console.log('❌ Groq configuration issue:', result.data)
+			console.log('❌ Groq GPT-OSS configuration issue:', result.data)
 		}
 	})
 
@@ -230,41 +282,38 @@ describe('Real LLM API Configuration Tests', () => {
 		}
 	})
 
-	it('validates LiteLLM health with real configuration', async () => {
+	it('validates integration with specific test models', async () => {
 		const running = await isContainerRunning()
 		if (!running) {
 			console.log('⏭️ Skipping - container not running')
 			return
 		}
 
-		console.log('🧪 Testing LiteLLM health check...')
+		console.log('🧪 Testing integration with both target models...')
 		
-		try {
-			const res = await fetch('http://localhost:8787/health/litellm')
-			const data = await res.json()
+		// Test both models sequentially
+		const models = [
+			{ name: 'openrouter/z-ai/glm-4.5-air', provider: 'OpenRouter' },
+			{ name: 'groq/openai/gpt-oss-20b', provider: 'Groq' }
+		]
+		
+		const results = []
+		for (const model of models) {
+			const result = await testLLMConnection(model.name, model.provider)
+			results.push(result)
 			
-			console.log(`📊 Health Result:`, {
-				status: res.status,
-				healthyEndpoints: data.healthy_endpoints?.length || 0,
-				unhealthyEndpoints: data.unhealthy_endpoints?.length || 0
-			})
-
-			if (res.status === 200) {
-				console.log('✅ LiteLLM health check working!')
-				expect(data).toHaveProperty('status')
-				
-				if (data.healthy_endpoints?.length > 0) {
-					console.log(`💚 Healthy endpoints: ${data.healthy_endpoints.length}`)
-				}
-				if (data.unhealthy_endpoints?.length > 0) {
-					console.log(`🔴 Unhealthy endpoints: ${data.unhealthy_endpoints.length}`)
-				}
+			if (result.status === 200) {
+				console.log(`✅ ${model.provider} ${model.name} - Working!`)
 			} else {
-				console.log('❌ Health check failed:', data)
+				console.log(`❌ ${model.provider} ${model.name} - Status: ${result.status}`)
 			}
-		} catch (error) {
-			console.log('❌ Health check error:', error)
 		}
+		
+		// Verify at least one model is working
+		const workingModels = results.filter(r => r.status === 200)
+		console.log(`📊 Integration Result: ${workingModels.length}/${models.length} models working`)
+		
+		expect(workingModels.length).toBeGreaterThan(0)
 	})
 })
 
