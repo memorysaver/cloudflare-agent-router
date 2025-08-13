@@ -41,23 +41,29 @@ general_settings:
   # Master key for authentication (can be overridden by environment)
   master_key: os.environ/LITELLM_MASTER_KEY
 
-  # Enable detailed logging for debugging
-  set_verbose: true
+  # Production logging (disable verbose)
+  set_verbose: false
 
   # Drop unsupported parameters to prevent errors
   drop_params: true
 
-  # Enable request/response caching for better performance
+  # Enable request/response caching (in-memory for Cloudflare)
   cache: true
-  cache_type: 'redis' # Will fallback to in-memory if Redis not available
+  cache_type: 'in-memory'
+
+  # Add health endpoint
+  health_check: true
 
 # LiteLLM specific settings
 litellm_settings:
   # Drop parameters that aren't supported by the target model
   drop_params: true
 
-  # Set detailed logging
-  set_verbose: true
+  # Production logging
+  set_verbose: false
 
   # Enable streaming for better user experience
   stream: true
+
+  # Timeout settings for production
+  request_timeout: 60

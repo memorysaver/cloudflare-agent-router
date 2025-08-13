@@ -358,7 +358,10 @@ describe('BYOK (Bring Your Own Key) Feature Tests', () => {
 				expect(res.status).toBe(401)
 
 				const data = (await res.json()) as any
-				expect(data).toHaveProperty('error', 'Authorization required')
+				// Empty Bearer token should still pass through to LiteLLM and return provider auth error
+				expect(data).toHaveProperty('error')
+				expect(data.error).toHaveProperty('message')
+				expect(data.error.message).toContain('AuthenticationError')
 			} catch (error) {
 				console.error('❌ Empty token test failed:', error)
 				throw error
