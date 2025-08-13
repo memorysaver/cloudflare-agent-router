@@ -1,0 +1,48 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "litellm-router",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-04-28",
+	"compatibility_flags": ["nodejs_compat"],
+	"routes": [],
+	"logpush": true,
+	"observability": {
+		"enabled": true
+	},
+	"containers": [
+		{
+			"max_instances": 10,
+			"class_name": "LiteLLMContainer",
+			"image": "./Dockerfile"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "LITELLM_CONTAINER",
+				"class_name": "LiteLLMContainer"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["LiteLLMContainer"]
+		}
+	],
+	"vars": {
+		"ENVIRONMENT": "development", // overridden during deployment
+		"SENTRY_RELEASE": "unknown", // overridden during deployment
+		"LITELLM_MASTER_KEY": "sk-1234", // default master key for authentication
+
+		// BYOK Router Configuration
+		"CLOUDFLARE_AGENT_ROUTER_API_KEY": "", // Premium router key for internal API access
+
+		// AI Provider API Keys (Internal - for Premium Mode) - set these in your .env file
+		"ANTHROPIC_API_KEY": "", // Anthropic Claude models
+		"OPENROUTER_API_KEY": "", // OpenRouter (100+ models via single API)
+		"GROQ_API_KEY": "", // Groq fast inference
+		"CEREBRAS_API_KEY": "", // Cerebras high-performance inference
+		"OPENAI_API_KEY": "" // OpenAI (optional - can use OpenRouter instead)
+	}
+}

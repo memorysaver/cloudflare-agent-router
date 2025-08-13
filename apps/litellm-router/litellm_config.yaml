@@ -1,0 +1,63 @@
+# LiteLLM Configuration for Cloudflare Router
+# This configuration defines the available models and their routing
+# Based on https://github.com/memorysaver/dotfiles/blob/main/litellm/config.yaml
+
+# Model list with wildcard patterns
+# API keys will be injected by Worker for all requests
+model_list:
+  # OpenRouter wildcard - any openrouter/ model
+  - model_name: openrouter/*
+    litellm_params:
+      model: openrouter/*
+      api_base: https://openrouter.ai/api/v1
+
+  # Groq wildcard - any groq/ model
+  - model_name: groq/*
+    litellm_params:
+      model: groq/*
+      api_base: https://api.groq.com/openai/v1
+
+  # Anthropic wildcard - any anthropic/ model
+  - model_name: anthropic/*
+    litellm_params:
+      model: anthropic/*
+
+  # Cerebras wildcard - any cerebras/ model
+  - model_name: cerebras/*
+    litellm_params:
+      model: cerebras/*
+
+# Router settings for load balancing and reliability
+router_settings:
+  routing_strategy: 'least-busy'
+  enable_loadbalancing: true
+  retry_policy:
+    max_retries: 3
+    timeout: 30
+    exponential_backoff: true
+
+# General LiteLLM settings
+general_settings:
+  # Master key for authentication (can be overridden by environment)
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+  # Enable detailed logging for debugging
+  set_verbose: true
+
+  # Drop unsupported parameters to prevent errors
+  drop_params: true
+
+  # Enable request/response caching for better performance
+  cache: true
+  cache_type: 'redis' # Will fallback to in-memory if Redis not available
+
+# LiteLLM specific settings
+litellm_settings:
+  # Drop parameters that aren't supported by the target model
+  drop_params: true
+
+  # Set detailed logging
+  set_verbose: true
+
+  # Enable streaming for better user experience
+  stream: true
