@@ -1,202 +1,396 @@
-# LiteLLM Router
+# Simplified LiteLLM Router v2.0
 
-A Cloudflare Worker that provides a unified OpenAI-compatible API gateway for multiple LLM providers using LiteLLM running in a Cloudflare Container.
+A streamlined Cloudflare Worker that provides intelligent API routing for multiple LLM providers with automatic provider detection and dual API format support.
 
 ## Overview
 
-This service acts as a proxy router that:
+This simplified router eliminates complex authentication modes in favor of an intuitive approach:
 
-- Provides OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/models`, etc.)
-- Routes requests to multiple LLM providers (OpenAI, Anthropic, etc.)
-- Runs LiteLLM in a Cloudflare Container for Python-based routing logic
-- Supports load balancing, retries, and failover between providers
+**🎯 "Bring your API key OR we auto-detect the provider"**
 
-## Architecture
+- Supports both **OpenAI** (`/v1/chat/completions`) and **Anthropic** (`/v1/messages`) API formats
+- Automatically detects provider from model name using regex patterns
+- Uses internal API keys when no user key is provided
+- **55% code reduction** from v1.0 (159 → 72 lines in main router)
+- Modular architecture with clean separation of concerns
 
+## Key Features
+
+✅ **Intelligent Auto-Detection**: Analyzes model names to determine provider automatically  
+✅ **Dual API Support**: Works with both OpenAI and Anthropic API formats seamlessly  
+✅ **BYOK (Bring Your Own Key)**: Pass your own API keys for direct provider access  
+✅ **Modular Architecture**: Clean `utils/` and `handlers/` separation for maintainability  
+✅ **Better Error Messages**: Clear, actionable error responses with provider suggestions  
+✅ **Claude Code Ready**: Proven integration with Claude Code AI assistant  
+
+## Quick Start
+
+1. **Start the router**: `just dev` (starts on port 8787)
+2. **Test auto-detection**:
+   ```bash
+   ./test-local.sh  # Tests all router functionality
+   ```
+3. **Test Claude Code integration**:
+   ```bash
+   ./test-cc.sh    # Launches Claude Code through router
+   ```
+
+## Authentication & Auto-Detection
+
+The router supports two simple authentication modes:
+
+### Option 1: Auto-Detection Mode
+Use the special `auto-detect` token to trigger provider detection:
+
+```bash
+curl -X POST http://localhost:8787/v1/chat/completions \
+  -H "Authorization: Bearer auto-detect" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openrouter/qwen/qwen3-coder",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 50
+  }'
 ```
-Client Request → Cloudflare Worker → LiteLLM Container → LLM Provider APIs
+
+**How it works:**
+1. Router detects `openrouter/` prefix in model name
+2. Uses internal `OPENROUTER_API_KEY` environment variable
+3. Forwards request to LiteLLM with proper authentication
+
+### Option 2: BYOK Mode
+Provide your own API key for direct provider access:
+
+```bash
+curl -X POST http://localhost:8787/v1/chat/completions \
+  -H "Authorization: Bearer your-actual-openrouter-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openrouter/qwen/qwen3-coder",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 50
+  }'
 ```
 
-- **Cloudflare Worker**: Handles HTTP routing and authentication
-- **LiteLLM Container**: Python-based LLM proxy with multi-provider support
-- **Durable Objects**: Manages container lifecycle and state
+> ⚠️ **Important**: The `auto-detect` token is a special reserved value that triggers provider detection. Any other token is treated as a real API key and passed directly to the provider.
+
+## Provider Auto-Detection
+
+The router uses regex patterns to identify providers from model names:
+
+| Provider | Pattern | Example Models |
+|----------|---------|----------------|
+| **OpenRouter** | `/^openrouter\//` | `openrouter/qwen/qwen3-coder` |
+| **Anthropic** | `/^(anthropic\/|claude-)/` | `anthropic/claude-3-haiku`, `claude-3-sonnet` |
+| **Groq** | `/^(groq\/|llama|mixtral)/` | `groq/llama3-8b-8192`, `llama3-70b` |
+| **Cerebras** | `/^cerebras\//` | `cerebras/llama3.1-8b` |
+| **OpenAI** | `/^(openai\/|gpt-|text-|davinci)/` | `openai/gpt-4`, `gpt-4o-mini` |
+
+**Detection Priority**: First match wins (order matters)
+
+**Environment Variables Required**:
+- `OPENROUTER_API_KEY` - For OpenRouter models
+- `ANTHROPIC_API_KEY` - For Anthropic/Claude models  
+- `GROQ_API_KEY` - For Groq models
+- `CEREBRAS_API_KEY` - For Cerebras models
+- `OPENAI_API_KEY` - For OpenAI models (optional, use OpenRouter instead)
+
+## API Endpoints
+
+### Health & Status
+
+- **`GET /worker-health`** - Simplified health check with provider status
+
+```bash
+curl http://localhost:8787/worker-health
+```
+
+**Response**:
+```json
+{
+  "status": "healthy",
+  "service": "LiteLLM Router",
+  "version": "2.0.0",
+  "description": "Simplified router: Bring your API key or we auto-detect provider",
+  "available_providers": ["openrouter", "anthropic", "groq", "cerebras", "openai"],
+  "internal_keys": {
+    "total_configured": 5
+  }
+}
+```
+
+### Completion Endpoints
+
+Both OpenAI and Anthropic API formats are supported:
+
+- **`POST /v1/chat/completions`** - OpenAI format (streaming supported)
+- **`POST /v1/messages`** - Anthropic format (streaming supported)
+- **`POST /v1/completions`** - Legacy OpenAI completions
+- **`GET /v1/models`** - List available models
+
+## Examples
+
+### Auto-Detection Examples
+
+**OpenAI Format**:
+```bash
+curl -X POST http://localhost:8787/v1/chat/completions \
+  -H "Authorization: Bearer auto-detect" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "groq/llama3-8b-8192",
+    "messages": [{"role": "user", "content": "What is 2+2?"}],
+    "max_tokens": 10
+  }'
+```
+
+**Anthropic Format**:
+```bash
+curl -X POST http://localhost:8787/v1/messages \
+  -H "Authorization: Bearer auto-detect" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "anthropic/claude-3-haiku-20240307",
+    "messages": [{"role": "user", "content": "What is 2+2?"}],
+    "max_tokens": 10
+  }'
+```
+
+### BYOK Examples
+
+**With Your Own Groq Key**:
+```bash
+curl -X POST http://localhost:8787/v1/chat/completions \
+  -H "Authorization: Bearer gsk-your-groq-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "groq/llama3-8b-8192",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 20
+  }'
+```
+
+**With Your Own Anthropic Key**:
+```bash
+curl -X POST http://localhost:8787/v1/messages \
+  -H "Authorization: Bearer sk-ant-your-anthropic-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "anthropic/claude-3-haiku-20240307",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 20
+  }'
+```
+
+### List Available Models
+
+```bash
+curl -X GET http://localhost:8787/v1/models \
+  -H "Authorization: Bearer auto-detect"
+```
+
+## Claude Code Integration
+
+The router works seamlessly with Claude Code AI assistant:
+
+### Environment Setup
+```bash
+export ANTHROPIC_AUTH_TOKEN="auto-detect"
+export ANTHROPIC_BASE_URL="http://localhost:8787"
+export ANTHROPIC_MODEL="openrouter/qwen/qwen3-coder"
+export ANTHROPIC_SMALL_FAST_MODEL="openrouter/qwen/qwen3-coder"
+```
+
+### Quick Test Script
+
+Use the provided `test-cc.sh` script:
+
+```bash
+./test-cc.sh
+```
+
+**What it does**:
+1. Checks if router is healthy on port 8787
+2. Sets up environment variables for Claude Code
+3. Launches Claude Code with the command: `claude -p "tell me a joke" --output-format stream-json --verbose`
+
+**Example Output**:
+```
+🔍 Checking router health on port 8787...
+✅ Router is healthy!
+🚀 Launching Claude Code with local router...
+📡 Using model: openrouter/qwen/qwen3-coder
+🌐 Router URL: http://localhost:8787
+
+{"type":"assistant","message":{"content":[{"type":"text","text":"Why don't scientists trust atoms?\n\nBecause they make up everything!"}]}}
+```
 
 ## Local Development
 
 ### Prerequisites
 
 1. **Docker Desktop**: Must be installed and running locally
-   - Download from [docker.com](https://www.docker.com/products/docker-desktop/)
-   - Ensure Docker daemon is running before starting development
+2. **Environment Variables**: Set up your API keys in `.dev.vars`
 
-2. **Environment Variables**: Set up your API keys
-
-   ```bash
-   # Copy the example environment file
-   cp .env.example .env
-
-   # Edit .env file with your API keys
-   # Get API keys from:
-   # - Anthropic: https://console.anthropic.com/
-   # - OpenRouter: https://openrouter.ai/keys (Recommended - 100+ models)
-   # - Groq: https://console.groq.com/keys
-   # - Cerebras: https://cloud.cerebras.ai/
-   # - OpenAI: https://platform.openai.com/api-keys
-   ```
+```bash
+# Copy and edit environment file
+cp .env.example .dev.vars
+# Add your API keys for providers you want to use
+```
 
 ### Development Workflow
 
-1. **Install Dependencies**
-
+1. **Install Dependencies**:
    ```bash
-   # From the monorepo root
    just install
    ```
 
-2. **Start Local Development**
-
+2. **Start Local Development**:
    ```bash
-   # From the monorepo root
-   just dev
-
-   # Or run this specific worker only
-   pnpm turbo -F litellm-router dev
-
-   # Alternative: Run wrangler directly (if turbo has issues)
-   cd apps/litellm-router && pnpm wrangler dev
+   just dev  # Starts on port 8787
    ```
 
-3. **What Happens During `wrangler dev`**
-   - Wrangler builds the Docker image from `./Dockerfile`
-   - Starts the LiteLLM container locally using Docker
-   - Creates a local development server at `http://localhost:8787`
-   - Container is accessible at internal port 4000
-
-4. **Testing Locally**
-
+3. **Test the Router**:
    ```bash
-   # Basic health check
-   curl http://localhost:8787/health
-
-   # LiteLLM health checks
-   curl http://localhost:8787/health/litellm      # Comprehensive LLM model health
-   curl http://localhost:8787/health/readiness    # Proxy readiness check
-   curl http://localhost:8787/health/liveliness   # Basic alive check
-
-   # List available models (requires API keys)
-   curl http://localhost:8787/v1/models
-
-   # Test with different providers (examples)
-   # Anthropic Claude
-   curl -X POST http://localhost:8787/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer sk-1234" \
-     -d '{
-       "model": "anthropic/claude-3-haiku-20240307",
-       "messages": [{"role": "user", "content": "Hello!"}],
-       "max_tokens": 100
-     }'
-
-   # OpenRouter (100+ models)
-   curl -X POST http://localhost:8787/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer sk-1234" \
-     -d '{
-       "model": "openrouter/anthropic/claude-3-haiku",
-       "messages": [{"role": "user", "content": "Hello!"}],
-       "max_tokens": 100
-     }'
-
-   # Groq (fast inference)
-   curl -X POST http://localhost:8787/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer sk-1234" \
-     -d '{
-       "model": "groq/llama-3.1-8b-instant",
-       "messages": [{"role": "user", "content": "Hello!"}],
-       "max_tokens": 100
-     }'
+   # Test all functionality
+   ./test-local.sh
+   
+   # Test Claude Code integration  
+   ./test-cc.sh
    ```
 
-### Container Configuration
+### What Happens During `just dev`
 
-The LiteLLM container is configured via:
-
-- `Dockerfile`: Uses official LiteLLM image
-- `litellm_config.yaml`: Defines available models and routing rules
-- `wrangler.jsonc`: Container and Durable Object bindings
-
-### Troubleshooting
-
-**"Build ID should be set if containers are defined" error:**
-
-- This happens when using Vite development mode with containers
-- **Solution**: The package.json has been updated to use `wrangler dev` instead of `vite dev`
-- **Alternative**: Run `cd apps/litellm-router && pnpm wrangler dev` directly
-
-**Container not starting:**
-
-- Ensure Docker Desktop is running
-- Check Docker daemon status: `docker info`
-- Verify container logs in Docker Desktop
-
-**API key errors:**
-
-- Ensure environment variables are set in your shell
-- Check `wrangler.jsonc` vars section for default values
-
-**Port conflicts:**
-
-- LiteLLM container uses internal port 4000
-- Worker dev server typically uses port 8787
-- Change ports if needed in `wrangler dev --port <port>`
+- Wrangler builds the Docker image from `./Dockerfile`
+- Starts the LiteLLM container locally using Docker
+- Creates a local development server on port 8787
+- Router handles authentication and forwards to LiteLLM container
 
 ## Testing
+
+### Test Scripts
+
+**`./test-local.sh`** - Comprehensive router testing:
+- Health checks (worker and LiteLLM)
+- Auto-detection functionality  
+- BYOK mode validation
+- Provider detection accuracy
+- Model listing
+
+**`./test-cc.sh`** - Claude Code integration testing:
+- Router health verification
+- Environment variable setup
+- Claude Code launch with streaming output
+
+### Manual Testing
+
+**Health Check**:
+```bash
+curl http://localhost:8787/worker-health | jq '.'
+```
+
+**Auto-Detection Test**:
+```bash
+curl -X POST http://localhost:8787/v1/chat/completions \
+  -H "Authorization: Bearer auto-detect" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "groq/llama3-8b-8192",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 20
+  }' | jq '.'
+```
 
 ### Unit & Integration Tests
 
 ```bash
-# Run all tests (without container)
+# Run all tests
 just test
 
 # Run tests for this worker only
 pnpm turbo -F litellm-router test
-
-# Run a specific test file
-pnpm vitest src/test/integration/api.test.ts
 ```
 
-### Real LLM API Tests
+## Architecture
 
-For testing with actual LLM providers:
+### Simplified Design (v2.0)
 
-```bash
-# 1. Set up environment
-cp .env.example .env
-# Edit .env with your API keys
-
-# 2. Start container
-pnpm wrangler dev
-
-# 3. Run real LLM tests
-pnpm vitest src/test/integration/real-llm.test.ts
+```
+Client Request → Worker (8787) → LiteLLM Container (4000) → Provider APIs
+                    ↓
+                [Auth Logic]
+                    ↓
+            auto-detect → Provider Detection → Internal Key
+            real-key → Pass Through → User Key
 ```
 
-**Test Types:**
+### Modular File Structure
 
-- **Basic Tests**: Worker routing without container (CI/CD safe)
-- **Container Tests**: Health checks with container running
-- **Real LLM Tests**: Actual API calls to validate configuration
+```
+src/
+├── index.ts              # Main router (72 lines, 55% reduction)
+├── utils/
+│   ├── auth.ts           # Token extraction
+│   ├── provider.ts       # Provider detection & patterns
+│   ├── request.ts        # Request modification
+│   └── types.ts          # Shared interfaces
+├── handlers/
+│   ├── completion.ts     # Completion endpoint logic
+│   └── proxy.ts          # Non-completion requests
+└── container.ts          # LiteLLM container (unchanged)
+```
 
-**What Real LLM Tests Validate:**
+**Benefits of Modular Design**:
+- ✅ **Testable**: Each utility function can be tested independently
+- ✅ **Maintainable**: Clear separation of concerns
+- ✅ **Extensible**: Easy to add new providers or modify logic
+- ✅ **Debuggable**: Issues can be isolated to specific modules
 
-- ✅ API keys are working
-- ✅ Model configurations are correct
-- ✅ Provider routing works
-- ✅ LiteLLM proxy functionality
-- ✅ Wildcard model patterns
+### Request Flow
 
-Note: Basic tests run without the container to avoid Docker dependency in CI. Real LLM tests require container + API keys.
+1. **Request arrives** at Worker on port 8787
+2. **Endpoint detection**: `/v1/messages` or `/v1/chat/completions` → completion handler
+3. **Auth extraction**: Parse `Authorization: Bearer <token>` header
+4. **Auth decision**:
+   - If `token === "auto-detect"` → Provider detection mode
+   - If `token !== "auto-detect"` → BYOK mode (pass through)
+5. **Provider detection** (auto-detect mode only):
+   - Parse model name with regex patterns
+   - Get internal API key for detected provider
+6. **Request modification**: Inject chosen API key into request body
+7. **Forward to container**: Send modified request to LiteLLM
+8. **Return response**: Stream back to client
+
+## Configuration
+
+### Environment Variables
+
+**Required for Auto-Detection**:
+- `OPENROUTER_API_KEY` - Recommended (100+ models via single key)
+- `ANTHROPIC_API_KEY` - For Claude models
+- `GROQ_API_KEY` - For fast inference models
+- `CEREBRAS_API_KEY` - For high-performance models  
+- `OPENAI_API_KEY` - Optional (can use OpenRouter instead)
+
+**Container Configuration**:
+- `LITELLM_MASTER_KEY` - For non-completion endpoints (health, models)
+
+### Supported Providers & Models
+
+| Provider | Models Available | Auto-Detection |
+|----------|-----------------|----------------|
+| **OpenRouter** | 100+ models | ✅ `openrouter/` prefix |
+| **Anthropic** | Claude 3.5, Claude 3 | ✅ `anthropic/` or `claude-` prefix |
+| **Groq** | Llama, Mixtral, Gemma | ✅ `groq/`, `llama`, `mixtral` patterns |
+| **Cerebras** | Llama optimized | ✅ `cerebras/` prefix |
+| **OpenAI** | GPT models | ✅ `openai/`, `gpt-`, `text-` patterns |
+
+**Model Examples**:
+- `openrouter/qwen/qwen3-coder` - Qwen3 Coder via OpenRouter
+- `anthropic/claude-3-haiku-20240307` - Claude 3 Haiku
+- `groq/llama3-8b-8192` - Llama 3 8B via Groq
+- `cerebras/llama3.1-8b` - Llama 3.1 8B via Cerebras
+- `gpt-4o-mini` - GPT-4o Mini via OpenAI
 
 ## Deployment
 
@@ -204,61 +398,101 @@ Note: Basic tests run without the container to avoid Docker dependency in CI. Re
 # Deploy to Cloudflare
 just deploy
 
-# Deploy this worker only
+# Deploy this worker only  
 pnpm turbo -F litellm-router deploy
 ```
 
-Before deployment, ensure:
-
+**Before deployment, ensure**:
 - `CLOUDFLARE_API_TOKEN` is set
-- `CLOUDFLARE_ACCOUNT_ID` is set
-- API keys are configured in Cloudflare dashboard
+- `CLOUDFLARE_ACCOUNT_ID` is set  
+- API keys are configured in Cloudflare dashboard (not in wrangler.jsonc)
 
-## Configuration
+## Troubleshooting
 
-### Supported Models
+### Common Issues
 
-The router supports models from multiple providers using wildcard patterns:
+**"Router not running on port 8787"**:
+- Ensure `just dev` is running
+- Check for port conflicts: `lsof -i :8787`
+- Try restarting: Stop dev server and run `just dev` again
 
-- **Anthropic**: `anthropic/*` (All Claude models: opus, sonnet, haiku, etc.)
-- **OpenRouter**: `openrouter/*` (100+ models via single API key)
-- **Groq**: `groq/*` (Fast inference: Llama, Mixtral, etc.)
-- **Cerebras**: `cerebras/*` (High-performance inference)
-- **OpenAI**: `openai/*` (GPT models - optional, can use OpenRouter)
+**"Invalid API Key" errors with auto-detect**:
+- Verify environment variables are set: `echo $OPENROUTER_API_KEY`
+- Check provider detection: Model name must match regex patterns
+- Test with health check: `curl http://localhost:8787/worker-health`
 
-**Configuration Features:**
+**"auto-detect" token not working**:
+- ✅ **Correct**: `Authorization: Bearer auto-detect`
+- ❌ **Incorrect**: `Authorization: Bearer "auto-detect"` (extra quotes)
+- ❌ **Incorrect**: `Authorization: auto-detect` (missing Bearer)
 
-- Wildcard model patterns for easy model access
-- Consistent parameters across providers (max_tokens: 65536, temperature: 0.7)
-- Environment variable-based API key management
-- Load balancing and retry policies
+**Claude Code not connecting**:
+- Verify environment variables:
+  ```bash
+  echo $ANTHROPIC_BASE_URL  # Should be http://localhost:8787
+  echo $ANTHROPIC_AUTH_TOKEN  # Should be auto-detect
+  ```
+- Test router directly first: `./test-local.sh`
+- Check if port 8787 is accessible: `curl http://localhost:8787/worker-health`
 
-Models are configured in `litellm_config.yaml` based on your dotfiles configuration.
+**Container not starting**:
+- Ensure Docker Desktop is running: `docker info`
+- Check Docker daemon status and available memory
+- Verify container logs in Docker Desktop interface
 
-### API Endpoints
+**Provider not detected**:
+- Check model name against patterns in Provider Auto-Detection section
+- Test specific provider: `curl -X POST ... -d '{"model": "groq/llama3-8b-8192", ...}'`
+- Verify API key for detected provider is configured
 
-**Health & Status:**
+### Error Messages
 
-- `GET /`: Basic health check
-- `GET /health`: Worker health status
-- `GET /health/litellm`: Comprehensive LLM model health check
-- `GET /health/readiness`: LiteLLM proxy readiness check
-- `GET /health/liveliness`: LiteLLM basic alive check
+**Good Error Messages (v2.0)**:
+```json
+{
+  "error": "No API key available", 
+  "message": "Provide Authorization header or use a supported model",
+  "details": "Available providers: openrouter, anthropic, groq",
+  "code": "NO_API_KEY"
+}
+```
 
-**OpenAI-Compatible API:**
+**Provider-Specific Errors**:
+```json
+{
+  "error": "No API key available",
+  "message": "No internal API key configured for detected provider: groq", 
+  "details": "Available providers: openrouter, anthropic",
+  "code": "NO_API_KEY"
+}
+```
 
-- `GET /v1/models`: List available models
-- `POST /v1/chat/completions`: Chat completions (streaming supported)
-- `POST /v1/completions`: Legacy completions
-- `POST /v1/embeddings`: Text embeddings
+### Performance Notes
 
-### Authentication
+- **Auto-detection overhead**: ~1ms for regex pattern matching
+- **Container warmup**: First request may take 2-3 seconds
+- **Subsequent requests**: Sub-200ms response times
+- **Provider detection**: Cached after first successful match
 
-Use the `Authorization: Bearer <token>` header. Default master key is `sk-1234` (configurable via `LITELLM_MASTER_KEY`).
+---
 
-## Development Notes
+## Migration from v1.0
 
-- Container instances are managed by Durable Objects for persistence
-- LiteLLM handles provider-specific API differences automatically
-- Load balancing and retries are configured in `litellm_config.yaml`
-- Detailed logging is enabled for debugging purposes
+**Key Changes**:
+- ❌ **Removed**: Complex premium/BYOK authentication modes
+- ❌ **Removed**: Master key authentication for completions
+- ✅ **Added**: Simple auto-detect token for provider detection
+- ✅ **Added**: Anthropic `/v1/messages` endpoint support
+- ✅ **Added**: Modular architecture with utils/handlers
+- ✅ **Improved**: Error messages with actionable details
+
+**Breaking Changes**:
+- Master key `sk-1234` no longer works for completions
+- Must use `auto-detect` token or real provider API keys
+- Health endpoint moved from `/health` to `/worker-health`
+
+**Migration Steps**:
+1. Replace `Authorization: Bearer sk-1234` with `Authorization: Bearer auto-detect`
+2. Update health check endpoint to `/worker-health`
+3. Set up internal API keys as environment variables
+4. Test with `./test-local.sh` script

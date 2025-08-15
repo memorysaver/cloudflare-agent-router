@@ -80,8 +80,8 @@ export async function handleCompletion(c: Context<App>): Promise<Response> {
  * @returns API key result with source and provider info
  */
 function determineApiKey(providedToken: string | null, modelName: string, env: any): ApiKeyResult {
-	// If user provided a token, use it directly (BYOK mode)
-	if (providedToken) {
+	// If user provided a real token (not "auto-detect"), use it directly (BYOK mode)
+	if (providedToken && providedToken !== 'auto-detect') {
 		return {
 			apiKey: providedToken,
 			source: 'user'

@@ -46,5 +46,5 @@ export function createMasterKeyRequest(request: Request, masterKey: string): Req
  * @returns True if it's a completion endpoint
  */
 export function isCompletionRequest(path: string): boolean {
-	return path.includes('/v1/chat/completions') || path.includes('/v1/completions')
+	return path.includes('/v1/chat/completions') || path.includes('/v1/completions') || path.includes('/v1/messages')
 }
