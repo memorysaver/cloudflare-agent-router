@@ -3,14 +3,14 @@
 # ⚠️ REQUIRES: Configure API keys in .dev.vars file
 # Tests: Real LLM provider API calls and authentication validation
 #
-# Real LLM Provider Integration Test Script v2.0
+# Real LLM Provider Integration Test Script v0.2
 # Makes actual API calls to validate provider integration and authentication
 # For router logic testing (no API keys needed), use ./test-router.sh instead
 
 BASE_URL="http://localhost:8787"
 AUTO_DETECT_TOKEN="auto-detect"
 
-echo "🔥 Testing Real LLM Provider Integration v2.0"
+echo "🔥 Testing Real LLM Provider Integration v0.2"
 echo "🌐 Base URL: $BASE_URL"
 echo "⚠️  Requires: 'just dev' running + API keys configured"
 echo "💡 Purpose: Make real API calls to validate providers"

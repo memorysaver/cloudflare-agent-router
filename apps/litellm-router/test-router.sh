@@ -2,14 +2,14 @@
 # ⚠️ REQUIRES: Run 'just dev' first to start local server on port 8787
 # Tests: Router functionality, logic, and behavior (no real API calls)
 #
-# Router Functionality Test Script v2.0
+# Router Functionality Test Script v0.2
 # Tests the router logic, routing behavior, and error handling
 # For real LLM provider testing, use ./test-providers.sh instead
 
 BASE_URL="http://localhost:8787"
 AUTO_DETECT_TOKEN="auto-detect"
 
-echo "🧪 Testing Router Functionality v2.0 (Logic & Behavior)"
+echo "🧪 Testing Router Functionality v0.2 (Logic & Behavior)"
 echo "🌐 Base URL: $BASE_URL"
 echo "⚠️  Requires: 'just dev' running on port 8787"
 echo "💡 Purpose: Test router logic (not real API calls)"
@@ -40,7 +40,7 @@ MODEL_COUNT=$(curl -s -X GET "$BASE_URL/v1/models" \
 echo "📊 Available models: $MODEL_COUNT"
 echo ""
 
-# Test 5: Test without auth key (should fail with clear v2.0 error)
+# Test 5: Test without auth key (should fail with clear v0.2 error)
 echo "5️⃣ Testing completion without auth key..."
 curl -s -w '\n🔍 Status: %{http_code}\n' \
   -X POST "$BASE_URL/v1/chat/completions" \

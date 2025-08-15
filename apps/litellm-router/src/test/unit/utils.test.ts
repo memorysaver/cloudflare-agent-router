@@ -1,62 +1,68 @@
 import { describe, expect, it } from 'vitest'
+
 import { extractAuthToken } from '../../utils/auth'
-import { detectProviderFromModel, getInternalApiKey, getAvailableProviders } from '../../utils/provider'
-import { modifyRequestWithApiKey, isCompletionRequest } from '../../utils/request'
+import {
+	detectProviderFromModel,
+	getAvailableProviders,
+	getInternalApiKey,
+} from '../../utils/provider'
+import { isCompletionRequest, modifyRequestWithApiKey } from '../../utils/request'
+
 import type { CompletionRequest } from '../../utils/types'
 
 describe('Auth Utilities', () => {
 	describe('extractAuthToken', () => {
 		it('extracts Bearer token correctly', () => {
 			const request = new Request('https://example.com', {
-				headers: { Authorization: 'Bearer sk-test-token-123' }
+				headers: { Authorization: 'Bearer sk-test-token-123' },
 			})
-			
+
 			expect(extractAuthToken(request)).toBe('sk-test-token-123')
 		})
 
 		it('handles Bearer token with extra spaces', () => {
 			const request = new Request('https://example.com', {
-				headers: { Authorization: '  Bearer   sk-test-token-123  ' }
+				headers: { Authorization: '  Bearer   sk-test-token-123  ' },
 			})
-			
+
 			expect(extractAuthToken(request)).toBe('sk-test-token-123')
 		})
 
 		it('handles non-Bearer authorization header', () => {
 			const request = new Request('https://example.com', {
-				headers: { Authorization: 'sk-test-token-without-bearer' }
+				headers: { Authorization: 'sk-test-token-without-bearer' },
 			})
-			
+
 			expect(extractAuthToken(request)).toBe('sk-test-token-without-bearer')
 		})
 
 		it('returns null for missing Authorization header', () => {
 			const request = new Request('https://example.com')
-			
+
 			expect(extractAuthToken(request)).toBeNull()
 		})
 
 		it('returns null for empty Bearer token', () => {
 			const request = new Request('https://example.com', {
-				headers: { Authorization: 'Bearer ' }
+				headers: { Authorization: 'Bearer ' },
 			})
-			
+
 			expect(extractAuthToken(request)).toBeNull()
 		})
 
 		it('returns null for empty Authorization header', () => {
 			const request = new Request('https://example.com', {
-				headers: { Authorization: '' }
+				headers: { Authorization: '' },
 			})
-			
+
 			expect(extractAuthToken(request)).toBeNull()
 		})
 
 		it('handles auto-detect token correctly', () => {
 			const request = new Request('https://example.com', {
-				headers: { Authorization: 'Bearer auto-detect' }
+				headers: { Authorization: 'Bearer auto-detect' },
 			})
-			
+
 			expect(extractAuthToken(request)).toBe('auto-detect')
 		})
 	})
@@ -67,7 +73,9 @@ describe('Provider Detection Utilities', () => {
 		it('detects OpenRouter models', () => {
 			expect(detectProviderFromModel('openrouter/qwen/qwen3-coder')).toBe('openrouter')
 			expect(detectProviderFromModel('openrouter/anthropic/claude-3-haiku')).toBe('openrouter')
-			expect(detectProviderFromModel('openrouter/meta-llama/llama-3-8b-instruct')).toBe('openrouter')
+			expect(detectProviderFromModel('openrouter/meta-llama/llama-3-8b-instruct')).toBe(
+				'openrouter'
+			)
 		})
 
 		it('detects Anthropic models', () => {
@@ -110,7 +118,10 @@ describe('Provider Detection Utilities', () => {
 		it('retrieves API key for configured provider', () => {
 			const mockEnv = {
 				OPENROUTER_API_KEY: 'sk-or-test-key',
-				ANTHROPIC_API_KEY: 'sk-ant-test-key'
+				ANTHROPIC_API_KEY: 'sk-ant-test-key',
+				NAME: 'test',
+				ENVIRONMENT: 'VITEST' as const,
+				SENTRY_RELEASE: 'test',
 			}
 
 			expect(getInternalApiKey('openrouter', mockEnv)).toBe('sk-or-test-key')
@@ -119,7 +130,10 @@ describe('Provider Detection Utilities', () => {
 
 		it('returns null for unconfigured provider', () => {
 			const mockEnv = {
-				OPENROUTER_API_KEY: 'sk-or-test-key'
+				OPENROUTER_API_KEY: 'sk-or-test-key',
+				NAME: 'test',
+				ENVIRONMENT: 'VITEST' as const,
+				SENTRY_RELEASE: 'test',
 			}
 
 			expect(getInternalApiKey('anthropic', mockEnv)).toBeNull()
@@ -132,7 +146,10 @@ describe('Provider Detection Utilities', () => {
 				ANTHROPIC_API_KEY: 'sk-ant-key',
 				GROQ_API_KEY: 'gsk-groq-key',
 				CEREBRAS_API_KEY: 'csk-cerebras-key',
-				OPENAI_API_KEY: 'sk-openai-key'
+				OPENAI_API_KEY: 'sk-openai-key',
+				NAME: 'test',
+				ENVIRONMENT: 'VITEST' as const,
+				SENTRY_RELEASE: 'test',
 			}
 
 			expect(getInternalApiKey('openrouter', mockEnv)).toBe('sk-or-key')
@@ -149,8 +166,11 @@ describe('Provider Detection Utilities', () => {
 				OPENROUTER_API_KEY: 'sk-or-key',
 				ANTHROPIC_API_KEY: 'sk-ant-key',
 				// GROQ_API_KEY not set
-				CEREBRAS_API_KEY: 'csk-cerebras-key'
+				CEREBRAS_API_KEY: 'csk-cerebras-key',
 				// OPENAI_API_KEY not set
+				NAME: 'test',
+				ENVIRONMENT: 'VITEST' as const,
+				SENTRY_RELEASE: 'test',
 			}
 
 			const available = getAvailableProviders(mockEnv)
@@ -162,8 +182,12 @@ describe('Provider Detection Utilities', () => {
 		})
 
 		it('returns empty array when no keys configured', () => {
-			const mockEnv = {}
-			
+			const mockEnv = {
+				NAME: 'test',
+				ENVIRONMENT: 'VITEST' as const,
+				SENTRY_RELEASE: 'test',
+			}
+
 			expect(getAvailableProviders(mockEnv)).toEqual([])
 		})
 
@@ -171,7 +195,10 @@ describe('Provider Detection Utilities', () => {
 			const mockEnv = {
 				OPENROUTER_API_KEY: 'sk-or-key',
 				ANTHROPIC_API_KEY: '', // Empty string
-				GROQ_API_KEY: undefined // Undefined
+				GROQ_API_KEY: undefined, // Undefined
+				NAME: 'test',
+				ENVIRONMENT: 'VITEST' as const,
+				SENTRY_RELEASE: 'test',
 			}
 
 			const available = getAvailableProviders(mockEnv)
@@ -209,7 +236,7 @@ describe('Request Utilities', () => {
 			// Should match when the endpoint is contained in the path
 			expect(isCompletionRequest('/api/v1/chat/completions')).toBe(true)
 			expect(isCompletionRequest('/proxy/v1/messages')).toBe(true)
-			
+
 			// Should not match partial substrings
 			expect(isCompletionRequest('/v1/chat/completions/extra')).toBe(true) // Still contains the endpoint
 			expect(isCompletionRequest('/v1/message')).toBe(false) // Not exact match
@@ -221,13 +248,13 @@ describe('Request Utilities', () => {
 			const originalBody: CompletionRequest = {
 				model: 'gpt-4',
 				messages: [{ role: 'user', content: 'Hello' }],
-				max_tokens: 50
+				max_tokens: 50,
 			}
 
 			const originalRequest = new Request('https://example.com/v1/chat/completions', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(originalBody)
+				body: JSON.stringify(originalBody),
 			})
 
 			const modifiedRequest = modifyRequestWithApiKey(originalBody, originalRequest, 'sk-test-key')
@@ -248,17 +275,17 @@ describe('Request Utilities', () => {
 		it('preserves original request properties', () => {
 			const originalBody: CompletionRequest = {
 				model: 'claude-3-haiku',
-				messages: [{ role: 'user', content: 'Test' }]
+				messages: [{ role: 'user', content: 'Test' }],
 			}
 
 			const originalRequest = new Request('https://example.com/v1/messages', {
 				method: 'POST',
-				headers: { 
+				headers: {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Test-Client',
-					'Custom-Header': 'custom-value'
+					'Custom-Header': 'custom-value',
 				},
-				body: JSON.stringify(originalBody)
+				body: JSON.stringify(originalBody),
 			})
 
 			const modifiedRequest = modifyRequestWithApiKey(originalBody, originalRequest, 'sk-ant-key')
@@ -275,17 +302,17 @@ describe('Request Utilities', () => {
 				model: 'openrouter/qwen/qwen3-coder',
 				messages: [
 					{ role: 'system', content: 'You are a helpful assistant.' },
-					{ role: 'user', content: 'Write a function to calculate fibonacci numbers.' }
+					{ role: 'user', content: 'Write a function to calculate fibonacci numbers.' },
 				],
 				max_tokens: 500,
 				temperature: 0.7,
 				top_p: 0.9,
-				stream: false
+				stream: false,
 			}
 
 			const originalRequest = new Request('https://example.com/v1/chat/completions', {
 				method: 'POST',
-				body: JSON.stringify(originalBody)
+				body: JSON.stringify(originalBody),
 			})
 
 			const modifiedRequest = modifyRequestWithApiKey(originalBody, originalRequest, 'sk-or-key')
@@ -307,7 +334,7 @@ describe('Request Utilities', () => {
 			circularBody.self = circularBody
 
 			const originalRequest = new Request('https://example.com/v1/chat/completions', {
-				method: 'POST'
+				method: 'POST',
 			})
 
 			expect(() => {
@@ -322,7 +349,7 @@ describe('Type Validation', () => {
 		it('accepts valid completion request', () => {
 			const validRequest: CompletionRequest = {
 				model: 'gpt-4',
-				messages: [{ role: 'user', content: 'Hello' }]
+				messages: [{ role: 'user', content: 'Hello' }],
 			}
 
 			expect(validRequest.model).toBe('gpt-4')
@@ -336,7 +363,7 @@ describe('Type Validation', () => {
 				max_tokens: 100,
 				temperature: 0.5,
 				top_p: 0.9,
-				stream: true
+				stream: true,
 			}
 
 			expect(requestWithOptionals.max_tokens).toBe(100)
@@ -354,7 +381,9 @@ describe('Edge Cases and Error Handling', () => {
 		})
 
 		it('handles special characters in model names', () => {
-			expect(detectProviderFromModel('openrouter/meta-llama/llama-3.1-8b-instruct')).toBe('openrouter')
+			expect(detectProviderFromModel('openrouter/meta-llama/llama-3.1-8b-instruct')).toBe(
+				'openrouter'
+			)
 			expect(detectProviderFromModel('anthropic/claude-3-haiku-20240307')).toBe('anthropic')
 		})
 
@@ -367,19 +396,19 @@ describe('Edge Cases and Error Handling', () => {
 	describe('Auth token edge cases', () => {
 		it('handles malformed Authorization headers', () => {
 			const request1 = new Request('https://example.com', {
-				headers: { Authorization: 'NotBearer token' }
+				headers: { Authorization: 'NotBearer token' },
 			})
 			expect(extractAuthToken(request1)).toBe('NotBearer token')
 
 			const request2 = new Request('https://example.com', {
-				headers: { Authorization: 'Bearer' }
+				headers: { Authorization: 'Bearer' },
 			})
 			expect(extractAuthToken(request2)).toBeNull()
 		})
 
 		it('handles special tokens', () => {
 			const request = new Request('https://example.com', {
-				headers: { Authorization: 'Bearer null' }
+				headers: { Authorization: 'Bearer null' },
 			})
 			expect(extractAuthToken(request)).toBe('null')
 		})

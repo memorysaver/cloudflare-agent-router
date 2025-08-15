@@ -6,8 +6,8 @@ import { useNotFound, useOnError } from '@repo/hono-helpers'
 import { LiteLLMContainer } from './container'
 import { handleCompletion } from './handlers/completion'
 import { handleOtherRequests } from './handlers/proxy'
-import { isCompletionRequest } from './utils/request'
 import { getAvailableProviders } from './utils/provider'
+import { isCompletionRequest } from './utils/request'
 
 import type { App } from './context'
 
@@ -28,11 +28,11 @@ const app = new Hono<App>()
 	// Worker health check (simplified infrastructure monitoring)
 	.get('/worker-health', (c) => {
 		const availableProviders = getAvailableProviders(c.env)
-		
+
 		return c.json({
 			status: 'healthy',
 			service: 'LiteLLM Router',
-			version: '2.0.0',
+			version: '0.2.0',
 			description: 'Simplified router: Bring your API key or we auto-detect provider',
 			available_providers: availableProviders,
 			internal_keys: {

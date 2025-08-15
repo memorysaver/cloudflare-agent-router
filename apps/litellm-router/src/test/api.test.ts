@@ -1,7 +1,7 @@
 import { SELF } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 
-describe('LiteLLM Router API v2.0', () => {
+describe('LiteLLM Router API v0.2', () => {
 	it('worker health check responds correctly', async () => {
 		const res = await SELF.fetch('https://example.com/worker-health')
 		expect(res.status).toBe(200)
@@ -9,8 +9,11 @@ describe('LiteLLM Router API v2.0', () => {
 		const data = await res.json()
 		expect(data).toHaveProperty('status', 'healthy')
 		expect(data).toHaveProperty('service', 'LiteLLM Router')
-		expect(data).toHaveProperty('version', '2.0.0')
-		expect(data).toHaveProperty('description', 'Simplified router: Bring your API key or we auto-detect provider')
+		expect(data).toHaveProperty('version', '0.2.0')
+		expect(data).toHaveProperty(
+			'description',
+			'Simplified router: Bring your API key or we auto-detect provider'
+		)
 		expect(data).toHaveProperty('available_providers')
 		expect(data).toHaveProperty('internal_keys')
 		expect(Array.isArray((data as any).available_providers)).toBe(true)
@@ -33,9 +36,9 @@ describe('LiteLLM Router API v2.0', () => {
 				'Content-Type': 'application/json',
 				Authorization: 'Bearer auto-detect',
 			},
-			body: JSON.stringify({ 
-				model: 'groq/llama3-8b-8192', 
-				messages: [{ role: 'user', content: 'test' }] 
+			body: JSON.stringify({
+				model: 'groq/llama3-8b-8192',
+				messages: [{ role: 'user', content: 'test' }],
 			}),
 		})
 
@@ -53,10 +56,10 @@ describe('LiteLLM Router API v2.0', () => {
 				'Content-Type': 'application/json',
 				Authorization: 'Bearer auto-detect',
 			},
-			body: JSON.stringify({ 
-				model: 'anthropic/claude-3-haiku-20240307', 
+			body: JSON.stringify({
+				model: 'anthropic/claude-3-haiku-20240307',
 				messages: [{ role: 'user', content: 'test' }],
-				max_tokens: 50
+				max_tokens: 50,
 			}),
 		})
 
@@ -79,19 +82,21 @@ describe('LiteLLM Router API v2.0', () => {
 		]
 
 		for (const endpoint of endpoints) {
-			const isCompletion = ['/v1/chat/completions', '/v1/completions', '/v1/messages'].includes(endpoint)
+			const isCompletion = ['/v1/chat/completions', '/v1/completions', '/v1/messages'].includes(
+				endpoint
+			)
 			const res = await SELF.fetch(`https://example.com${endpoint}`, {
 				method: endpoint === '/v1/models' ? 'GET' : 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: 'Bearer auto-detect', // Use v2.0 auto-detect token
+					Authorization: 'Bearer auto-detect', // Use v0.2 auto-detect token
 				},
 				body: isCompletion
-					? JSON.stringify({ 
-						model: 'groq/llama3-8b-8192', 
-						messages: [{ role: 'user', content: 'test' }],
-						max_tokens: 10
-					})
+					? JSON.stringify({
+							model: 'groq/llama3-8b-8192',
+							messages: [{ role: 'user', content: 'test' }],
+							max_tokens: 10,
+						})
 					: undefined,
 			})
 
@@ -124,9 +129,9 @@ describe('LiteLLM Router API v2.0', () => {
 			const res = await SELF.fetch(`https://example.com${endpoint}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ 
-					model: 'groq/llama3-8b-8192', 
-					messages: [{ role: 'user', content: 'test' }] 
+				body: JSON.stringify({
+					model: 'groq/llama3-8b-8192',
+					messages: [{ role: 'user', content: 'test' }],
 				}),
 			})
 
@@ -151,9 +156,9 @@ describe('LiteLLM Router API v2.0', () => {
 				'Content-Type': 'application/json',
 				Authorization: 'Bearer auto-detect',
 			},
-			body: JSON.stringify({ 
-				model: 'openrouter/qwen/qwen3-coder', 
-				messages: [{ role: 'user', content: 'test' }] 
+			body: JSON.stringify({
+				model: 'openrouter/qwen/qwen3-coder',
+				messages: [{ role: 'user', content: 'test' }],
 			}),
 		})
 
@@ -171,9 +176,9 @@ describe('LiteLLM Router API v2.0', () => {
 				'Content-Type': 'application/json',
 				Authorization: 'Bearer sk-user-provided-key',
 			},
-			body: JSON.stringify({ 
-				model: 'groq/llama3-8b-8192', 
-				messages: [{ role: 'user', content: 'test' }] 
+			body: JSON.stringify({
+				model: 'groq/llama3-8b-8192',
+				messages: [{ role: 'user', content: 'test' }],
 			}),
 		})
 
@@ -198,7 +203,7 @@ describe('LiteLLM Router API v2.0', () => {
 		expect([400, 503]).toContain(res.status)
 
 		const data = await res.json()
-		
+
 		if (res.status === 400) {
 			expect((data as any).error).toBe('Invalid request body')
 		} else if (res.status === 503) {
@@ -213,8 +218,8 @@ describe('LiteLLM Router API v2.0', () => {
 				'Content-Type': 'application/json',
 				Authorization: 'Bearer auto-detect',
 			},
-			body: JSON.stringify({ 
-				messages: [{ role: 'user', content: 'test' }] 
+			body: JSON.stringify({
+				messages: [{ role: 'user', content: 'test' }],
 				// Missing model field
 			}),
 		})
@@ -223,7 +228,7 @@ describe('LiteLLM Router API v2.0', () => {
 		expect([400, 503]).toContain(res.status)
 
 		const data = await res.json()
-		
+
 		if (res.status === 400) {
 			expect((data as any).error).toBe('Missing model')
 		} else if (res.status === 503) {

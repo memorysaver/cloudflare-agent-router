@@ -1,5 +1,5 @@
 import type { Env } from '../context'
-import type { ProviderPattern, Provider } from './types'
+import type { Provider, ProviderPattern } from './types'
 
 /**
  * Provider detection patterns with priority order
@@ -22,15 +22,15 @@ export function detectProviderFromModel(modelName: string): Provider | null {
 	if (!modelName || typeof modelName !== 'string') {
 		return null
 	}
-	
+
 	const normalizedModel = modelName.toLowerCase().trim()
-	
+
 	for (const { provider, pattern } of PROVIDER_PATTERNS) {
 		if (pattern.test(normalizedModel)) {
 			return provider as Provider
 		}
 	}
-	
+
 	return null
 }
 
@@ -64,12 +64,12 @@ export function getInternalApiKey(provider: Provider, env: Env): string | null {
  */
 export function getAvailableProviders(env: Env): Provider[] {
 	const providers: Provider[] = []
-	
+
 	if (env.OPENROUTER_API_KEY) providers.push('openrouter')
 	if (env.ANTHROPIC_API_KEY) providers.push('anthropic')
 	if (env.GROQ_API_KEY) providers.push('groq')
 	if (env.CEREBRAS_API_KEY) providers.push('cerebras')
 	if (env.OPENAI_API_KEY) providers.push('openai')
-	
+
 	return providers
 }
