@@ -9,8 +9,30 @@
 	"observability": {
 		"enabled": true
 	},
+	"containers": [
+		{
+			"max_instances": 5,
+			"class_name": "ClaudeCodeContainer",
+			"image": "./claude.Dockerfile"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "CLAUDE_CONTAINER",
+				"class_name": "ClaudeCodeContainer"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["ClaudeCodeContainer"]
+		}
+	],
 	"vars": {
 		"ENVIRONMENT": "development", // overridden during deployment
-		"SENTRY_RELEASE": "unknown" // overridden during deployment
+		"SENTRY_RELEASE": "unknown", // overridden during deployment
+		"ANTHROPIC_BASE_URL": "https://litellm-router.memorysaver.workers.dev"
 	}
 }
