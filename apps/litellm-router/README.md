@@ -28,7 +28,7 @@ This simplified router eliminates complex authentication modes in favor of an in
 1. **Start the router**: `just dev` (starts on port 8787)
 2. **Test auto-detection**:
    ```bash
-   ./test-local.sh  # Tests all router functionality
+   ./test-router.sh  # Tests all router functionality
    ```
 3. **Test Claude Code integration**:
    ```bash
@@ -253,7 +253,7 @@ cp .env.example .dev.vars
 3. **Test the Router**:
    ```bash
    # Test all functionality
-   ./test-local.sh
+   ./test-router.sh
    
    # Test Claude Code integration  
    ./test-cc.sh
@@ -268,21 +268,86 @@ cp .env.example .dev.vars
 
 ## Testing
 
-### Test Scripts
+### Clean Testing Separation
 
-**`./test-local.sh`** - Comprehensive router testing:
-- Health checks (worker and LiteLLM)
-- Auto-detection functionality  
-- BYOK mode validation
-- Provider detection accuracy
-- Model listing
+We use a clean separation between **fast unit tests** (CI/CD ready) and **integration tests** (manual, requires server):
 
-**`./test-cc.sh`** - Claude Code integration testing:
-- Router health verification
-- Environment variable setup
+#### Fast Unit Tests (CI/CD Ready)
+```bash
+# Run all unit tests - NO dependencies required
+just test
+
+# Run tests for this worker only
+pnpm turbo -F litellm-router test
+```
+
+**What's tested:**
+- ✅ Provider detection regex patterns
+- ✅ Auth token extraction logic
+- ✅ Request modification utilities
+- ✅ API routing (mocked with SELF.fetch)
+- ✅ Type validation and error handling
+
+**Benefits:**
+- 🚀 **Fast execution** (~2-3 seconds)
+- 🤖 **CI/CD ready** (no external dependencies)
+- 🔄 **Developer friendly** (instant feedback during development)
+
+#### Integration Test Scripts (Manual - Requires `just dev`)
+
+**⚠️ All scripts require running `just dev` first to start local server on port 8787**
+
+**`./test-router.sh`** - Router functionality testing:
+- Router logic and behavior validation  
+- Auto-detect vs BYOK token routing
+- Dual API format support (OpenAI + Anthropic)
+- Error handling and validation
+- **Requirements**: Only `just dev` running
+- **Purpose**: Test router logic (no real API calls)
+- **Usage**: Development and router validation
+
+**`./test-providers.sh`** - Real LLM provider testing:
+- Actual LLM API calls with configured keys
+- Provider authentication validation
+- Model listing and availability verification
+- End-to-end provider integration testing
+- **Requirements**: `just dev` + API keys in `.dev.vars`
+- **Purpose**: Validate real provider integration
+- **Usage**: Production readiness testing
+
+**`./test-cc.sh`** - Claude Code integration:
+- Router health verification for Claude Code
+- Environment variable setup validation
 - Claude Code launch with streaming output
+- **Usage**: Test Claude Code AI assistant integration
 
-### Manual Testing
+### Quick Test Commands
+
+**Development Workflow:**
+```bash
+# 1. Fast feedback during development
+just test
+
+# 2. Start server for integration testing  
+just dev
+
+# 3. Test router logic and behavior (in another terminal)
+./test-router.sh                   # No API keys needed
+
+# 4. Test real provider integration (optional)
+./test-providers.sh                # Needs API keys in .dev.vars
+
+# 5. Test Claude Code integration
+./test-cc.sh                       # Uses auto-detect mode
+```
+
+**When to Use Which Script:**
+- **`just test`**: During development (instant feedback)
+- **`./test-router.sh`**: Router changes (test logic without API costs)
+- **`./test-providers.sh`**: Before deployment (validate providers work)
+- **`./test-cc.sh`**: AI assistant integration validation
+
+### Manual Testing Examples
 
 **Health Check**:
 ```bash
@@ -301,14 +366,16 @@ curl -X POST http://localhost:8787/v1/chat/completions \
   }' | jq '.'
 ```
 
-### Unit & Integration Tests
-
+**Anthropic Format Test**:
 ```bash
-# Run all tests
-just test
-
-# Run tests for this worker only
-pnpm turbo -F litellm-router test
+curl -X POST http://localhost:8787/v1/messages \
+  -H "Authorization: Bearer auto-detect" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "anthropic/claude-3-haiku-20240307",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 20
+  }' | jq '.'
 ```
 
 ## Architecture
@@ -432,7 +499,7 @@ pnpm turbo -F litellm-router deploy
   echo $ANTHROPIC_BASE_URL  # Should be http://localhost:8787
   echo $ANTHROPIC_AUTH_TOKEN  # Should be auto-detect
   ```
-- Test router directly first: `./test-local.sh`
+- Test router directly first: `./test-router.sh`
 - Check if port 8787 is accessible: `curl http://localhost:8787/worker-health`
 
 **Container not starting**:
@@ -495,4 +562,4 @@ pnpm turbo -F litellm-router deploy
 1. Replace `Authorization: Bearer sk-1234` with `Authorization: Bearer auto-detect`
 2. Update health check endpoint to `/worker-health`
 3. Set up internal API keys as environment variables
-4. Test with `./test-local.sh` script
+4. Test with `./test-router.sh` script

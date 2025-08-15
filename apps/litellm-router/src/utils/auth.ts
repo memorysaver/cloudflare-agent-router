@@ -16,6 +16,11 @@ export function extractAuthToken(request: Request): string | null {
 		return token.length > 0 ? token : null
 	}
 	
+	// Handle malformed "Bearer" without space or token
+	if (authHeader.trim() === 'Bearer') {
+		return null
+	}
+	
 	// Handle direct token (no "Bearer " prefix)
 	const trimmed = authHeader.trim()
 	return trimmed.length > 0 ? trimmed : null
