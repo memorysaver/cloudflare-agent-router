@@ -106,7 +106,7 @@ app.post('/', async (c) => {
       maxTurns: maxTurns,
       // Critical SDK defaults for proper function
       allowedTools: allowedTools || undefined, // undefined = all tools enabled
-      permissionMode: permissionMode || 'default',
+      permissionMode: permissionMode || 'bypassPermissions',
       cwd: cwd || process.cwd(),
       pathToClaudeCodeExecutable: pathToClaudeCodeExecutable || undefined // undefined = SDK manages
     }

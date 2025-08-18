@@ -24,7 +24,7 @@ export interface ClaudeCodeRequest {
 	resumeSessionId?: string         // Default: undefined
 	
 	// Permission & Security
-	permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"  // Default: "default"
+	permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"  // Default: "bypassPermissions"
 	permissionPromptTool?: string    // Default: undefined
 	
 	// MCP Configuration
@@ -118,7 +118,7 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			resumeSessionId: requestBody.resumeSessionId,
 
 			// Permission & Security
-			permissionMode: requestBody.permissionMode || 'default',
+			permissionMode: requestBody.permissionMode || 'bypassPermissions',
 			permissionPromptTool: requestBody.permissionPromptTool,
 
 			// MCP Configuration

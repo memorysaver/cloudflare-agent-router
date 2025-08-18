@@ -103,7 +103,7 @@ All Claude Code SDK parameters are supported directly. See [Claude Code SDK docu
 | `disallowedTools` | `string[]` | `undefined` | Tools to disable |
 | `continueSession` | `boolean` | `false` | Continue from previous session |
 | `resumeSessionId` | `string` | `undefined` | Session ID to resume |
-| `permissionMode` | `"default" \| "acceptEdits" \| "plan" \| "bypassPermissions"` | `"default"` | Permission level |
+| `permissionMode` | `"default" \| "acceptEdits" \| "plan" \| "bypassPermissions"` | `"bypassPermissions"` | Permission level |
 | `permissionPromptTool` | `string` | `undefined` | Custom permission tool |
 | `mcpConfig` | `string` | `undefined` | MCP server configuration |
 | `cwd` | `string` | `undefined` | Working directory |
