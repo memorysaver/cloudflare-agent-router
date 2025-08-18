@@ -23,7 +23,7 @@ export interface ClaudeCodeOptions {
 	resumeSessionId?: string         // Default: undefined
 	
 	// Permission & Security
-	permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"  // Default: "bypassPermissions"
+	permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"  // Default: "acceptEdits"
 	permissionPromptTool?: string    // Default: undefined
 	
 	// MCP Configuration
