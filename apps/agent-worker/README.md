@@ -1,355 +1,386 @@
-# Agent Worker
+# Claude Code SDK Proxy
 
-A Cloudflare Workers application that provides Claude Code SDK integration via containerized execution.
+A simple HTTP API wrapper for the Claude Code SDK, enabling web-based access to Claude Code's full capabilities with LiteLLM router integration.
 
 ## Overview
 
-The Agent Worker implements a multi-layered architecture that enables Claude Code execution within Cloudflare's serverless environment using containers. It provides a REST API endpoint for executing Claude Code queries with full session isolation and streaming support.
+This proxy provides a clean HTTP interface to the Claude Code SDK while maintaining the official SDK patterns. It's designed with ultra-simple architecture principles:
+
+- **Minimal Environment Variables**: Only LiteLLM router configuration
+- **Direct Parameter Mapping**: HTTP request parameters map directly to Claude Code SDK
+- **Official SDK Compliance**: Follows Claude Code SDK documentation exactly
+- **Container Isolation**: Each request runs in isolated Docker containers
+- **Session Management**: Automatic fresh sessions with proper cleanup
+
+## Quick Start
+
+### Basic Usage
+
+```bash
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is 2+2?"}'
+```
+
+Response:
+```json
+{
+  "type": "result",
+  "result": "4", 
+  "sessionId": "abc123...",
+  "requestId": "req_...",
+  "cost_usd": 0.000444,
+  "duration_ms": 5100
+}
+```
+
+### Advanced Example
+
+```bash
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Create a Python function to calculate fibonacci numbers",
+    "model": "anthropic/claude-3.5-sonnet-latest",
+    "stream": false,
+    "maxTurns": 5,
+    "systemPrompt": "You are a Python expert. Write clean, documented code.",
+    "verbose": true
+  }'
+```
 
 ## Architecture
 
-### System Design
+### Ultra-Simple Design
 
 ```
-Client Request
-     ↓
-Cloudflare Worker (Hono Router)
-     ↓
-Claude Code Handler
-     ↓
-ClaudeCodeContainer (Cloudflare Container)
-     ↓
-Node.js HTTP Server (claude-server.js)
-     ↓
+HTTP Client
+    ↓ POST /claude-code
+Cloudflare Worker
+    ↓ Parse & validate request
+Docker Container
+    ↓ Direct parameter mapping
 Claude Code SDK
-     ↓
+    ↓ AI model calls
 LiteLLM Router → AI Models
 ```
 
-### Core Components
+### Key Principles
 
-#### 1. **Main Worker** (`src/index.ts`)
-- Hono-based HTTP router
-- Handles `/claude-code` POST endpoint
-- Request validation and routing
+1. **Environment Variables**: Only for LiteLLM router configuration
+2. **HTTP Parameters**: All Claude Code options come from request body
+3. **Direct Mapping**: Request parameters → SDK parameters (no transformation)
+4. **Clean Separation**: API config vs request data
 
-#### 2. **Claude Code Handler** (`src/handlers/claude-code.ts`)
-- Parses HTTP requests into `ClaudeCodeOptions`
-- Manages container lifecycle
-- Environment variable configuration
-- Request forwarding to container
+## Complete API Reference
 
-#### 3. **ClaudeCodeContainer** (`src/claude-container.ts`)
-- Extends Cloudflare Container class
-- Manages containerized Claude Code execution
-- HTTP request forwarding to internal server
-- Session isolation and cleanup
+### Endpoint: `POST /claude-code`
 
-#### 4. **Container HTTP Server** (`claude-server.js`)
-- Node.js + Hono server running inside Docker container
-- Claude Code SDK integration
-- Request parsing and session management
-- Response streaming and logging
+#### Required Parameters
 
-#### 5. **Docker Container** (`claude.Dockerfile`)
-- Node.js 20-slim base image
-- Claude Code SDK installation
-- Container runtime configuration
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `prompt` | `string` | **Required.** The query or task to send to Claude Code |
 
-### Request Flow
+#### API Configuration
 
-#### 1. **Client Request**
-```json
-POST /claude-code
-{
-  "prompt": "What is 7 * 6?",
-  "model": "openrouter/qwen/qwen3-coder",
-  "stream": false,
-  "maxTurns": 3
-}
-```
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | `string` | `"groq/openai/gpt-oss-120b"` | AI model (any LiteLLM-compatible model) |
+| `stream` | `boolean` | `false` | Enable real-time streaming responses |
+| `verbose` | `boolean` | `false` | Include detailed logs and full message history |
 
-#### 2. **Handler Processing**
-- Validates request body
-- Creates `ClaudeCodeOptions` object
-- Configures environment variables
-- Gets container instance by name
+#### Claude Code SDK Parameters
 
-#### 3. **Container Execution**
-- Sets environment variables for fallback configuration
-- Creates HTTP request with actual data in body
-- Forwards to container's internal HTTP server
-- Returns streaming or non-streaming response
+All Claude Code SDK parameters are supported directly. See [Claude Code SDK documentation](https://docs.anthropic.com/en/docs/claude-code/sdk#type-script) for complete reference.
 
-#### 4. **SDK Integration**
-- Parses HTTP request body (primary) + env vars (fallback)
-- Generates unique request ID for logging
-- Creates fresh AbortController for isolation
-- Executes Claude Code SDK query with session management
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `maxTurns` | `number` | `3` | Maximum conversation turns |
+| `systemPrompt` | `string` | `""` | Custom system prompt (empty = Claude Code default) |
+| `appendSystemPrompt` | `string` | `undefined` | Additional context for system prompt |
+| `allowedTools` | `string[]` | `undefined` | Specific tools to enable (undefined = all tools) |
+| `disallowedTools` | `string[]` | `undefined` | Tools to disable |
+| `continueSession` | `boolean` | `false` | Continue from previous session |
+| `resumeSessionId` | `string` | `undefined` | Session ID to resume |
+| `permissionMode` | `"default" \| "acceptEdits" \| "plan" \| "bypassPermissions"` | `"default"` | Permission level |
+| `permissionPromptTool` | `string` | `undefined` | Custom permission tool |
+| `mcpConfig` | `string` | `undefined` | MCP server configuration |
+| `cwd` | `string` | `undefined` | Working directory |
+| `executable` | `string` | `undefined` | Custom executable path |
+| `executableArgs` | `string[]` | `undefined` | Additional executable arguments |
+| `pathToClaudeCodeExecutable` | `string` | `undefined` | Full path to Claude Code binary |
 
-#### 5. **Response Generation**
-- Streams messages from Claude Code SDK
-- Logs session IDs and results for debugging
-- Returns JSON response with result and session metadata
+### Response Formats
 
-## Session Management
+#### Non-Streaming Response
 
-### Isolation Strategy
-- **Request Isolation**: Each HTTP request gets fresh Claude Code SDK query
-- **Session Isolation**: New session ID generated per request
-- **Process Isolation**: AbortController per request for cancellation
-- **Container Isolation**: Persistent container with fresh SDK processes
-
-### Configuration
 ```typescript
-interface ClaudeCodeOptions {
-  prompt: string           // User query
-  model?: string          // AI model (default: claude-3-5-sonnet-20241022)
-  stream?: boolean        // Streaming response (default: true)
-  verbose?: boolean       // Detailed logging (default: false)
-  maxTurns?: number      // Conversation turns (default: 3)
-  additionalArgs?: string[] // Extra CLI arguments
-}
-```
-
-### Environment Variables
-```bash
-# Primary Configuration
-ANTHROPIC_BASE_URL=https://litellm-router.memorysaver.workers.dev
-ANTHROPIC_AUTH_TOKEN=auto-detect
-
-# Container Runtime (set dynamically)
-CLAUDE_PROMPT=<request_prompt>
-ANTHROPIC_MODEL=<request_model>
-CLAUDE_STREAM=true|false
-CLAUDE_VERBOSE=true|false
-CLAUDE_MAX_TURNS=3
-```
-
-## API Reference
-
-### POST /claude-code
-
-Execute Claude Code with specified prompt and configuration.
-
-#### Request Body
-```typescript
-{
-  prompt: string           // Required: The query to execute
-  model?: string          // Optional: AI model to use
-  stream?: boolean        // Optional: Enable streaming (default: true)
-  verbose?: boolean       // Optional: Verbose logging (default: false)
-  maxTurns?: number      // Optional: Max conversation turns (default: 3)
-  additionalArgs?: string[] // Optional: Additional CLI arguments
-}
-```
-
-#### Response Format
-```typescript
-// Non-streaming response
 {
   type: "result"
-  result: string          // The Claude Code output
-  sessionId: string       // Unique session identifier
-  messages?: array        // Full message history (if verbose)
+  result: string          // Claude Code output
+  sessionId: string       // Unique session identifier  
+  requestId: string       // Unique request identifier
+  cost_usd?: number      // Execution cost (if available)
+  duration_ms?: number   // Execution time in milliseconds
+  messages?: array       // Full message history (if verbose: true)
 }
+```
 
-// Streaming response (Content-Type: text/plain)
-{"type":"assistant","content":"..."}
-{"type":"tool_call","tool":"...","input":"..."}
-{"type":"tool_result","tool":"...","result":"..."}
-{"type":"result","result":"Final answer"}
+#### Streaming Response
+
+Content-Type: `text/plain`
+
+```json
+{"type":"assistant","content":"I'll help you with that..."}
+{"type":"tool_call","tool":"write_file","input":{"path":"script.py","content":"..."}}
+{"type":"tool_result","tool":"write_file","result":"File written successfully"}
+{"type":"result","result":"I've created the Python script for you."}
 ```
 
 #### Error Response
+
 ```typescript
 {
   type: "error"
-  error: string          // Error type
-  message: string        // Human-readable message
-  details?: string       // Stack trace or additional info
+  error: string          // Error category
+  message: string        // Human-readable error message
+  details?: string       // Additional debugging info
 }
+```
+
+## Environment Configuration
+
+The proxy uses minimal environment variables for LiteLLM router configuration only.
+
+### Container Environment Variables
+
+Only these environment variables are injected into the container:
+
+| Environment Variable | Source | Purpose |
+|---------------------|--------|---------|
+| `ANTHROPIC_MODEL` | Request `model` or default | Model for LiteLLM router |
+| `ANTHROPIC_BASE_URL` | Worker configuration | LiteLLM router URL |
+| `ANTHROPIC_AUTH_TOKEN` | Worker configuration | Authentication mode |
+| `ANTHROPIC_API_KEY` | Worker configuration | API key (if provided) |
+
+### Data Flow
+
+1. **HTTP Request**: All Claude Code parameters in request body
+2. **Environment Setup**: Only LiteLLM configuration as environment variables
+3. **Direct Mapping**: Request parameters → Claude Code SDK options
+4. **SDK Execution**: Following official Claude Code SDK patterns
+
+Example mapping:
+```javascript
+// HTTP Request
+{
+  "prompt": "What is 2+2?",
+  "maxTurns": 3,
+  "systemPrompt": "You are helpful"
+}
+
+// Claude Code SDK Call
+query({
+  prompt: "What is 2+2?",
+  options: {
+    maxTurns: 3,
+    systemPrompt: "You are helpful"
+  }
+})
+```
+
+## Usage Examples
+
+### Basic Math Query
+
+```bash
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Calculate 15 * 23"}'
+```
+
+### Code Generation
+
+```bash
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Create a React component for a todo list",
+    "model": "anthropic/claude-3.5-sonnet-latest",
+    "systemPrompt": "You are a React expert. Use TypeScript.",
+    "maxTurns": 5
+  }'
+```
+
+### Tool Restrictions
+
+```bash
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Help me analyze data",
+    "allowedTools": ["read_file", "write_file"],
+    "permissionMode": "plan"
+  }'
+```
+
+### Session Continuation
+
+```bash
+# First request
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Start a Python script"}'
+
+# Continue with returned sessionId
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Add error handling",
+    "continueSession": true,
+    "resumeSessionId": "abc123..."
+  }'
+```
+
+### Streaming Response
+
+```bash
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Explain recursion in programming",
+    "stream": true,
+    "verbose": true
+  }'
 ```
 
 ## Development
 
-### Local Development
+### Prerequisites
 
-#### Prerequisites
 - Node.js 20+
 - pnpm
 - Docker
 - Cloudflare CLI (wrangler)
 
-#### Setup
+### Local Development
+
 ```bash
 # Install dependencies
 pnpm install
 
-# Run in dev mode (includes container building)
+# Start development server
 pnpm turbo dev
 
-# Access at http://localhost:8788
-```
-
-#### Development Commands
-```bash
-# Development server with hot reload
-pnpm turbo dev
-
-# Build for production
-pnpm turbo build
-
-# Run tests
-pnpm test
-
-# Type checking
-pnpm turbo check:types
-
-# Linting
-pnpm turbo check:lint
-
-# Deploy to Cloudflare
-pnpm turbo deploy
-```
-
-### Container Development
-
-#### Manual Container Testing
-```bash
-# Build container image
-docker build -f claude.Dockerfile -t claude-code-test .
-
-# Run container locally
-docker run -p 3000:3000 -e ANTHROPIC_BASE_URL="https://litellm-router.memorysaver.workers.dev" claude-code-test
-
-# Test container endpoint
-curl -X POST http://localhost:3000 \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "What is 2+2?", "model": "openrouter/qwen/qwen3-coder"}'
-```
-
-#### Container Debugging
-```bash
-# Get running container ID
-docker ps --filter "ancestor=cloudflare-dev/claudecodecontainer"
-
-# View container logs
-docker logs <container_id>
-
-# Execute commands in container
-docker exec -it <container_id> /bin/bash
+# Access at http://localhost:8788/claude-code
 ```
 
 ### Testing
 
-#### Integration Tests
 ```bash
-# Run all tests
+# Quick test
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Hello Claude!"}'
+
+# Run test suite
 pnpm test
 
-# Run specific test file
-pnpm vitest src/test/integration/api.test.ts
-
-# Run with coverage
-pnpm vitest --coverage
+# Type checking
+pnpm turbo check:types
 ```
-
-#### Manual Testing Script
-```bash
-# Use the test script
-./test-claude-code.sh
-```
-
-## Configuration
-
-### Container Configuration
-- **Port**: 3000 (internal)
-- **Timeout**: 10 minutes (`sleepAfter`)
-- **Internet**: Enabled for API calls
-- **Lifecycle**: Persistent with automatic cleanup
-
-### Model Configuration
-- **Default Model**: `claude-3-5-sonnet-20241022`
-- **Router**: LiteLLM proxy at `litellm-router.memorysaver.workers.dev`
-- **Authentication**: Auto-detect mode
-- **Supported Models**: All models available through LiteLLM router
-
-### Performance Configuration
-- **Max Turns**: 3 (configurable per request)
-- **Streaming**: Enabled by default
-- **Session Isolation**: Fresh sessions per request
-- **Container Reuse**: Optimized for multiple requests
 
 ## Troubleshooting
 
-### Common Issues
+### Container Logs
 
-#### Container Not Starting
-- Check Docker daemon is running
-- Verify port 3000 is available
-- Check container build logs for errors
-
-#### Empty Responses
-- Verify `ANTHROPIC_BASE_URL` configuration
-- Check LiteLLM router accessibility
-- Review container logs for SDK errors
-
-#### Session Caching
-- Ensure request body is properly formatted
-- Verify different prompts in container logs
-- Check session IDs are unique per request
-
-### Debug Endpoints
-
-#### Container Health Check
 ```bash
-# Check container status (when running)
-curl http://localhost:3000/
+# Find running container
+docker ps --filter "ancestor=cloudflare-dev/claudecodecontainer"
 
-# Debug container environment
-curl http://localhost:3000/debug
+# View logs
+docker logs <container_id>
+
+# Follow logs in real-time
+docker logs -f <container_id>
 ```
 
-#### Logging
-- **Container Logs**: `docker logs <container_id>`
-- **Worker Logs**: Cloudflare Workers dashboard
-- **Request Tracing**: Unique request IDs in logs
+### Common Issues
+
+#### Request Timeouts
+
+**Symptoms**: HTTP request hangs or times out
+
+**Debug Steps**:
+1. Check container logs for errors
+2. Verify model exists: `curl https://litellm-router.memorysaver.workers.dev/v1/models`
+3. Test with known working model: `"groq/openai/gpt-oss-120b"`
+
+#### Invalid Model Errors
+
+**Symptoms**: Error responses about model not found
+
+**Solutions**:
+1. Check available models: `curl https://litellm-router.memorysaver.workers.dev/v1/models`
+2. Use full model name (e.g., `"groq/openai/gpt-oss-120b"` not `"gpt-oss-120b"`)
+3. Verify LiteLLM router is accessible
+
+#### Parameter Not Working
+
+**Symptoms**: Claude Code ignores parameter
+
+**Debug Steps**:
+1. Check parameter name matches Claude Code SDK documentation
+2. Verify parameter type (string vs number vs boolean)
+3. Enable verbose logging: `"verbose": true`
+
+### Debug Logs
+
+The proxy provides detailed logging:
+
+```
+🤖 ULTRA-SIMPLE: Direct request-to-SDK mapping
+🤖 Prompt (from request): What is 2+2?
+🤖 Model (env fallback): groq/openai/gpt-oss-120b
+🤖 LiteLLM Base URL: https://litellm-router.memorysaver.workers.dev
+```
+
+Enable verbose mode for complete Claude Code SDK logs:
+```json
+{"verbose": true}
+```
 
 ## Deployment
 
 ### Production Deployment
+
 ```bash
-# Build and deploy
+# Deploy to Cloudflare
 pnpm turbo deploy
 
-# Deploy specific environment
-wrangler deploy --env production
+# Check status
+wrangler deployments list
 ```
 
 ### Environment Configuration
-- Set `ANTHROPIC_BASE_URL` in production wrangler.jsonc
-- Configure container limits and timeouts
-- Set up monitoring and alerting
+
+Set in `wrangler.jsonc`:
+
+```json
+{
+  "vars": {
+    "ANTHROPIC_BASE_URL": "https://litellm-router.memorysaver.workers.dev",
+    "ANTHROPIC_AUTH_TOKEN": "auto-detect"
+  }
+}
+```
 
 ## Architecture Benefits
 
-### Scalability
-- **Container Isolation**: Multiple concurrent executions
-- **Stateless Design**: Horizontal scaling friendly
-- **Session Management**: No shared state between requests
-
-### Reliability
-- **Error Recovery**: Container restart capability
-- **Request Isolation**: Failed requests don't affect others
-- **Fallback Configuration**: Environment variables as backup
-
-### Performance
-- **Container Reuse**: Persistent containers reduce startup time
-- **Streaming**: Real-time response delivery
-- **Parallel Processing**: Multiple containers for concurrent requests
-
-### Security
-- **Sandboxed Execution**: Containers provide isolation
-- **No Shared State**: Each request isolated
-- **Environment Separation**: Runtime configuration isolation
+- **Simplicity**: Minimal environment variables, direct parameter mapping
+- **Compliance**: Follows official Claude Code SDK patterns exactly
+- **Flexibility**: All Claude Code SDK features available via HTTP
+- **Scalability**: Container isolation allows concurrent requests
+- **Maintainability**: Clean separation between API config and request data
+- **Debuggability**: Clear logging and request tracing

@@ -64,13 +64,24 @@ app.post('/', async (c) => {
     console.log('  - Base URL:', process.env.ANTHROPIC_BASE_URL)
     console.log('  - Auth Token:', process.env.ANTHROPIC_AUTH_TOKEN)
     
-    // Extract request parameters (all from request body - no fallbacks)
+    // ULTRA-SIMPLE: All request parameters from web request directly
+    const prompt = requestBody.prompt || 'hello'
+    const model = requestBody.model || process.env.ANTHROPIC_MODEL || 'groq/openai/gpt-oss-120b'
+    const stream = requestBody.stream !== undefined ? requestBody.stream : false
+    const verbose = requestBody.verbose !== undefined ? requestBody.verbose : false  
+    const maxTurns = requestBody.maxTurns || 3
+    
+    console.log('🤖 ULTRA-SIMPLE: Direct request-to-SDK mapping')
+    console.log('🤖 Request ID:', requestId)
+    console.log('🤖 Prompt (from request):', prompt)
+    console.log('🤖 Model (env fallback):', model)
+    console.log('🤖 LiteLLM Base URL:', process.env.ANTHROPIC_BASE_URL)
+    console.log('🤖 Stream (from request):', stream)
+    console.log('🤖 Max Turns (from request):', maxTurns)
+    console.log('🤖 Complete Request Body:', JSON.stringify(requestBody, null, 2))
+    
+    // Extract additional parameters from request body for extended functionality
     const {
-      prompt,
-      model,
-      stream,
-      verbose,
-      maxTurns,
       systemPrompt,
       appendSystemPrompt,
       allowedTools,
@@ -87,50 +98,26 @@ app.post('/', async (c) => {
       additionalArgs
     } = requestBody
     
-    // Validate required parameters
-    if (!prompt) {
-      throw new Error('Missing required parameter: prompt')
+    // ULTRA-SIMPLE: Direct request-to-SDK mapping (following official docs pattern)
+    const options = {
+      systemPrompt: systemPrompt && systemPrompt.trim() !== '' 
+        ? systemPrompt 
+        : `You are a helpful assistant. [Request ID: ${requestId}]`,
+      maxTurns: maxTurns,
+      // Critical SDK defaults for proper function
+      allowedTools: allowedTools || undefined, // undefined = all tools enabled
+      permissionMode: permissionMode || 'default',
+      cwd: cwd || process.cwd(),
+      pathToClaudeCodeExecutable: pathToClaudeCodeExecutable || undefined // undefined = SDK manages
     }
     
-    console.log('🤖 Extracted Parameters:')
-    console.log('  - Prompt:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''))
-    console.log('  - Model:', model)
-    console.log('  - Stream:', stream)
-    console.log('  - Max Turns:', maxTurns)
-    console.log('  - System Prompt:', systemPrompt === '' ? '[EMPTY - Using Claude Code default]' : systemPrompt)
-    console.log('  - Permission Mode:', permissionMode)
-    console.log('  - Allowed Tools:', allowedTools)
-    console.log('  - Continue Session:', continueSession)
-    console.log('  - Resume Session ID:', resumeSessionId)
-    
-    // Configure Claude Code SDK options - filter out empty/undefined values
-    const options = {}
-    
-    // Always add systemPrompt (even if empty) to test if that fixes the hanging issue
-    if (systemPrompt !== undefined) {
-      options.systemPrompt = systemPrompt
-    }
-    
-    // Only add appendSystemPrompt if provided
-    if (appendSystemPrompt) {
-      options.appendSystemPrompt = appendSystemPrompt
-    }
-    
-    // Always include basic options
-    if (maxTurns) options.maxTurns = maxTurns
-    if (allowedTools) options.allowedTools = allowedTools
-    if (disallowedTools) options.disallowedTools = disallowedTools
-    if (permissionMode) options.permissionMode = permissionMode
+    // Add optional parameters directly from request (no env var fallbacks)
+    if (appendSystemPrompt) options.appendSystemPrompt = appendSystemPrompt
+    if (disallowedTools) options.disallowedTools = disallowedTools  
     if (permissionPromptTool) options.permissionPromptTool = permissionPromptTool
     if (mcpConfig) options.mcpConfig = mcpConfig
-    if (cwd) options.cwd = cwd
     if (executable) options.executable = executable
     if (executableArgs || additionalArgs) options.executableArgs = executableArgs || additionalArgs
-    if (pathToClaudeCodeExecutable) options.pathToClaudeCodeExecutable = pathToClaudeCodeExecutable
-    
-    // Set defaults for required options
-    if (!options.permissionMode) options.permissionMode = 'default'
-    if (!options.cwd) options.cwd = process.cwd()
     
     console.log('🤖 Claude Code SDK Options:')
     console.log(JSON.stringify(options, null, 2))
