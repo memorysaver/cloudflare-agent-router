@@ -7,6 +7,7 @@ export interface ClaudeCodeRequest {
 	model?: string
 	stream?: boolean
 	verbose?: boolean
+	maxTurns?: number
 	additionalArgs?: string[]
 }
 
@@ -70,6 +71,7 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			model: requestBody.model || 'claude-3-5-sonnet-20241022',
 			stream: requestBody.stream !== false, // Default to true
 			verbose: requestBody.verbose || false,
+			maxTurns: requestBody.maxTurns || 3, // Default to allow multiple turns
 			additionalArgs: requestBody.additionalArgs || [],
 		}
 

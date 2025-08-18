@@ -28,31 +28,61 @@ app.get('/', (c) => {
   })
 })
 
+// Debug endpoint to check what's in memory
+app.get('/debug', (c) => {
+  return c.json({
+    timestamp: new Date().toISOString(),
+    environment: {
+      CLAUDE_PROMPT: process.env.CLAUDE_PROMPT,
+      ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
+      CLAUDE_STREAM: process.env.CLAUDE_STREAM,
+      CLAUDE_VERBOSE: process.env.CLAUDE_VERBOSE,
+      CLAUDE_MAX_TURNS: process.env.CLAUDE_MAX_TURNS
+    },
+    processInfo: {
+      uptime: process.uptime(),
+      pid: process.pid,
+      memoryUsage: process.memoryUsage()
+    }
+  })
+})
+
 // Claude Code execution endpoint
 app.post('/', async (c) => {
   try {
     console.log('🤖 Claude Code SDK server received request')
     
-    // Get parameters from environment variables (set by container)
-    const prompt = process.env.CLAUDE_PROMPT || 'hello'
-    const model = process.env.ANTHROPIC_MODEL || 'openrouter/qwen/qwen3-coder'
-    const stream = process.env.CLAUDE_STREAM === 'true'
-    const verbose = process.env.CLAUDE_VERBOSE === 'true'
-    const maxTurns = parseInt(process.env.CLAUDE_MAX_TURNS || '1')
+    // Parse request body to get dynamic parameters
+    const requestBody = await c.req.json()
     
-    console.log('🤖 Executing Claude Code SDK with prompt:', prompt.substring(0, 50) + '...')
+    // Use request parameters, fallback to environment variables
+    const prompt = requestBody.prompt || process.env.CLAUDE_PROMPT || 'hello'
+    const model = requestBody.model || process.env.ANTHROPIC_MODEL || 'openrouter/qwen/qwen3-coder'
+    const stream = requestBody.stream !== undefined ? requestBody.stream : (process.env.CLAUDE_STREAM === 'true')
+    const verbose = requestBody.verbose !== undefined ? requestBody.verbose : (process.env.CLAUDE_VERBOSE === 'true')
+    const maxTurns = requestBody.maxTurns || parseInt(process.env.CLAUDE_MAX_TURNS || '3')
+    
+    // Generate unique request ID to track this specific request
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    console.log('🤖 Executing Claude Code SDK with prompt:', prompt)
+    console.log('🤖 Request ID:', requestId)
     console.log('🤖 Model:', model)
     console.log('🤖 Base URL:', process.env.ANTHROPIC_BASE_URL)
     console.log('🤖 Stream:', stream)
     console.log('🤖 Max Turns:', maxTurns)
+    console.log('🤖 Request Body:', JSON.stringify(requestBody, null, 2))
     
-    // Configure Claude Code SDK options
+    // Configure Claude Code SDK options with unique system prompt to prevent caching
     const options = {
-      systemPrompt: 'You are a helpful assistant.',
+      systemPrompt: `You are a helpful assistant. [Request ID: ${requestId}]`,
       maxTurns: maxTurns,
       // Allow all tools by default
       allowedTools: undefined, // This allows all tools
-      permissionMode: 'default'
+      permissionMode: 'default',
+      cwd: process.cwd(),
+      // Force fresh executable for each request to prevent CLI caching
+      pathToClaudeCodeExecutable: undefined // Use default but let SDK manage process lifecycle
     }
     
     if (stream) {
@@ -61,8 +91,30 @@ app.post('/', async (c) => {
         new ReadableStream({
           async start(controller) {
             try {
-              for await (const message of query({ prompt, options })) {
+              // Force fresh session - no session continuation or resume
+              console.log(`🔄 Creating fresh session for streaming query`)
+              let sessionId = null
+              
+              // Create fresh AbortController for this request
+              const abortController = new AbortController()
+              
+              for await (const message of query({ 
+                prompt, 
+                abortController,
+                options: options
+              })) {
                 console.log('📤 SDK Message type:', message.type)
+                
+                // Capture session ID from init message
+                if (message.type === "system" && message.subtype === "init") {
+                  sessionId = message.session_id
+                  console.log(`🆔 New session created: ${sessionId}`)
+                }
+                
+                // Log all message content for debugging
+                if (message.type === "result") {
+                  console.log(`🔍 SDK Result Message:`, JSON.stringify(message, null, 2))
+                }
                 
                 // Stream different message types
                 let data
@@ -119,8 +171,31 @@ app.post('/', async (c) => {
       // For non-streaming, collect all messages and return final result
       const messages = []
       
-      for await (const message of query({ prompt, options })) {
+      // Force fresh session - no session continuation or resume
+      console.log(`🔄 Creating fresh session for non-streaming query`)
+      let sessionId = null
+      
+      // Create fresh AbortController for this request
+      const abortController = new AbortController()
+      
+      for await (const message of query({ 
+        prompt, 
+        abortController,
+        options: options
+      })) {
         console.log('📤 SDK Message type:', message.type)
+        
+        // Capture session ID from init message
+        if (message.type === "system" && message.subtype === "init") {
+          sessionId = message.session_id
+          console.log(`🆔 New session created: ${sessionId}`)
+        }
+        
+        // Log all message content for debugging
+        if (message.type === "result") {
+          console.log(`🔍 SDK Result Message:`, JSON.stringify(message, null, 2))
+        }
+        
         messages.push(message)
       }
       
@@ -128,10 +203,12 @@ app.post('/', async (c) => {
       const result = messages.find(m => m.type === 'result')
       
       console.log('✅ Claude Code SDK execution completed')
+      console.log(`🔍 Request: ${requestId}, Session: ${sessionId}, Result: ${result?.result || 'No result found'}`)
       
       return c.json({
         type: 'result',
         result: result?.result || 'No result found',
+        sessionId: sessionId, // Include session ID in response
         messages: verbose ? messages : undefined
       })
     }

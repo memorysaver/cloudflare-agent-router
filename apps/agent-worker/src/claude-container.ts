@@ -5,6 +5,7 @@ export interface ClaudeCodeOptions {
 	model?: string
 	stream?: boolean
 	verbose?: boolean
+	maxTurns?: number
 	additionalArgs?: string[]
 }
 
@@ -61,7 +62,7 @@ export class ClaudeCodeContainer extends Container {
 			ANTHROPIC_MODEL: options.model || 'claude-3-5-sonnet-20241022',
 			CLAUDE_STREAM: options.stream ? 'true' : 'false',
 			CLAUDE_VERBOSE: options.verbose ? 'true' : 'false',
-			CLAUDE_MAX_TURNS: '1', // Default to single turn
+			CLAUDE_MAX_TURNS: String(options.maxTurns || 3), // Default to allow multiple turns
 		}
 
 		console.log(`🤖 Starting Claude Code container with model: ${this.envVars.ANTHROPIC_MODEL}`)
@@ -69,15 +70,19 @@ export class ClaudeCodeContainer extends Container {
 		// Start the container (HTTP server will start automatically)
 		await this.start()
 
-		// Create a POST request to the container's HTTP server
+		// Create a POST request to the container's HTTP server with actual request data
 		const request = new Request(`http://localhost:${this.defaultPort}/`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify({
-				// The HTTP server will read from environment variables
-				// This body can be empty or contain additional options
+				prompt: options.prompt,
+				model: options.model,
+				stream: options.stream,
+				verbose: options.verbose,
+				maxTurns: options.maxTurns,
+				additionalArgs: options.additionalArgs
 			}),
 		})
 
