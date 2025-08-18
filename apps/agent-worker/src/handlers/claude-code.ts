@@ -1,14 +1,43 @@
 import type { Context } from 'hono'
-import type { ClaudeCodeOptions } from '../claude-container'
 import type { App } from '../context'
 
 export interface ClaudeCodeRequest {
+	// Required
 	prompt: string
-	model?: string
-	stream?: boolean
-	verbose?: boolean
-	maxTurns?: number
-	additionalArgs?: string[]
+
+	// API Configuration
+	model?: string                    // Default: "groq/openai/gpt-oss-120b"
+	stream?: boolean                  // Default: true
+	verbose?: boolean                 // Default: false
+
+	// Claude Code SDK Core Options
+	maxTurns?: number                // Default: 3
+	systemPrompt?: string            // Default: "" (empty - let Claude Code use default)
+	appendSystemPrompt?: string      // Default: undefined
+	
+	// Tool Management
+	allowedTools?: string[]          // Default: undefined (all tools)
+	disallowedTools?: string[]       // Default: undefined
+	
+	// Session Management
+	continueSession?: boolean        // Default: false
+	resumeSessionId?: string         // Default: undefined
+	
+	// Permission & Security
+	permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"  // Default: "default"
+	permissionPromptTool?: string    // Default: undefined
+	
+	// MCP Configuration
+	mcpConfig?: string               // Default: undefined
+	
+	// Runtime Configuration
+	cwd?: string                     // Default: undefined
+	executable?: string              // Default: undefined
+	executableArgs?: string[]        // Default: undefined
+	pathToClaudeCodeExecutable?: string  // Default: undefined
+
+	// Legacy (for backward compatibility)
+	additionalArgs?: string[]        // Deprecated - use executableArgs
 }
 
 export interface ClaudeCodeError {
@@ -65,38 +94,61 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			`🤖 Processing Claude Code request with prompt: "${requestBody.prompt.substring(0, 50)}..."`
 		)
 
-		// Prepare Claude Code options
-		const options: ClaudeCodeOptions = {
+		// Prepare complete Claude Code options with defaults
+		const options: ClaudeCodeRequest = {
+			// Required
 			prompt: requestBody.prompt,
-			model: requestBody.model || 'claude-3-5-sonnet-20241022',
+
+			// API Configuration with user's preferred defaults
+			model: requestBody.model || 'groq/openai/gpt-oss-120b',
 			stream: requestBody.stream !== false, // Default to true
 			verbose: requestBody.verbose || false,
-			maxTurns: requestBody.maxTurns || 3, // Default to allow multiple turns
-			additionalArgs: requestBody.additionalArgs || [],
+
+			// Claude Code SDK Core Options
+			maxTurns: requestBody.maxTurns || 3,
+			systemPrompt: requestBody.systemPrompt !== undefined ? requestBody.systemPrompt : '', // Default to empty string
+			appendSystemPrompt: requestBody.appendSystemPrompt,
+
+			// Tool Management
+			allowedTools: requestBody.allowedTools,
+			disallowedTools: requestBody.disallowedTools,
+
+			// Session Management
+			continueSession: requestBody.continueSession || false,
+			resumeSessionId: requestBody.resumeSessionId,
+
+			// Permission & Security
+			permissionMode: requestBody.permissionMode || 'default',
+			permissionPromptTool: requestBody.permissionPromptTool,
+
+			// MCP Configuration
+			mcpConfig: requestBody.mcpConfig,
+
+			// Runtime Configuration
+			cwd: requestBody.cwd,
+			executable: requestBody.executable,
+			executableArgs: requestBody.executableArgs,
+			pathToClaudeCodeExecutable: requestBody.pathToClaudeCodeExecutable,
+
+			// Legacy support
+			additionalArgs: requestBody.additionalArgs || requestBody.executableArgs || [],
 		}
 
-		// Prepare environment variables
+		// Prepare environment variables (API configuration only)
 		const envVars: Record<string, string> = {
-			ANTHROPIC_AUTH_TOKEN: 'auto-detect',
+			ANTHROPIC_AUTH_TOKEN: c.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
 			ANTHROPIC_BASE_URL: c.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
-			ANTHROPIC_MODEL: options.model || 'openrouter/qwen/qwen3-coder',
-			ANTHROPIC_SMALL_FAST_MODEL: 'openrouter/qwen/qwen3-coder',
 		}
 
-		// Add optional environment variables if they exist (override defaults if provided)
-		if (c.env.ANTHROPIC_AUTH_TOKEN && c.env.ANTHROPIC_AUTH_TOKEN !== 'auto-detect') {
-			envVars.ANTHROPIC_AUTH_TOKEN = c.env.ANTHROPIC_AUTH_TOKEN
-		}
+		// Add optional API key if provided
 		if (c.env.ANTHROPIC_API_KEY) {
 			envVars.ANTHROPIC_API_KEY = c.env.ANTHROPIC_API_KEY
 		}
-		if (c.env.ANTHROPIC_BASE_URL) {
-			envVars.ANTHROPIC_BASE_URL = c.env.ANTHROPIC_BASE_URL
-		}
 
 		console.log(`🤖 Using LiteLLM router: ${envVars.ANTHROPIC_BASE_URL}`)
-		console.log(`🤖 Using model: ${envVars.ANTHROPIC_MODEL}`)
+		console.log(`🤖 Using model: ${options.model}`)
 		console.log(`🤖 Auth mode: ${envVars.ANTHROPIC_AUTH_TOKEN}`)
+		console.log(`🤖 Request contains ${Object.keys(requestBody).length} parameters`)
 
 		// Skip API key validation since we're using auto-detect with LiteLLM router
 

@@ -28,16 +28,14 @@ app.get('/', (c) => {
   })
 })
 
-// Debug endpoint to check what's in memory
+// Debug endpoint to check API configuration
 app.get('/debug', (c) => {
   return c.json({
     timestamp: new Date().toISOString(),
-    environment: {
-      CLAUDE_PROMPT: process.env.CLAUDE_PROMPT,
-      ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
-      CLAUDE_STREAM: process.env.CLAUDE_STREAM,
-      CLAUDE_VERBOSE: process.env.CLAUDE_VERBOSE,
-      CLAUDE_MAX_TURNS: process.env.CLAUDE_MAX_TURNS
+    apiConfiguration: {
+      ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+      ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? '[REDACTED]' : undefined
     },
     processInfo: {
       uptime: process.uptime(),
@@ -47,73 +45,135 @@ app.get('/debug', (c) => {
   })
 })
 
-// Claude Code execution endpoint
+// Claude Code execution endpoint - Pure proxy
 app.post('/', async (c) => {
   try {
-    console.log('🤖 Claude Code SDK server received request')
+    console.log('🤖 Claude Code SDK proxy received request')
     
-    // Parse request body to get dynamic parameters
+    // Parse complete request body
     const requestBody = await c.req.json()
     
-    // Use request parameters, fallback to environment variables
-    const prompt = requestBody.prompt || process.env.CLAUDE_PROMPT || 'hello'
-    const model = requestBody.model || process.env.ANTHROPIC_MODEL || 'openrouter/qwen/qwen3-coder'
-    const stream = requestBody.stream !== undefined ? requestBody.stream : (process.env.CLAUDE_STREAM === 'true')
-    const verbose = requestBody.verbose !== undefined ? requestBody.verbose : (process.env.CLAUDE_VERBOSE === 'true')
-    const maxTurns = requestBody.maxTurns || parseInt(process.env.CLAUDE_MAX_TURNS || '3')
-    
-    // Generate unique request ID to track this specific request
+    // Generate unique request ID for tracking
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     
-    console.log('🤖 Executing Claude Code SDK with prompt:', prompt)
+    // Detailed request logging for debugging
     console.log('🤖 Request ID:', requestId)
-    console.log('🤖 Model:', model)
-    console.log('🤖 Base URL:', process.env.ANTHROPIC_BASE_URL)
-    console.log('🤖 Stream:', stream)
-    console.log('🤖 Max Turns:', maxTurns)
-    console.log('🤖 Request Body:', JSON.stringify(requestBody, null, 2))
+    console.log('🤖 Complete Request Body:')
+    console.log(JSON.stringify(requestBody, null, 2))
+    console.log('🤖 API Configuration:')
+    console.log('  - Base URL:', process.env.ANTHROPIC_BASE_URL)
+    console.log('  - Auth Token:', process.env.ANTHROPIC_AUTH_TOKEN)
     
-    // Configure Claude Code SDK options with unique system prompt to prevent caching
-    const options = {
-      systemPrompt: `You are a helpful assistant. [Request ID: ${requestId}]`,
-      maxTurns: maxTurns,
-      // Allow all tools by default
-      allowedTools: undefined, // This allows all tools
-      permissionMode: 'default',
-      cwd: process.cwd(),
-      // Force fresh executable for each request to prevent CLI caching
-      pathToClaudeCodeExecutable: undefined // Use default but let SDK manage process lifecycle
+    // Extract request parameters (all from request body - no fallbacks)
+    const {
+      prompt,
+      model,
+      stream,
+      verbose,
+      maxTurns,
+      systemPrompt,
+      appendSystemPrompt,
+      allowedTools,
+      disallowedTools,
+      continueSession,
+      resumeSessionId,
+      permissionMode,
+      permissionPromptTool,
+      mcpConfig,
+      cwd,
+      executable,
+      executableArgs,
+      pathToClaudeCodeExecutable,
+      additionalArgs
+    } = requestBody
+    
+    // Validate required parameters
+    if (!prompt) {
+      throw new Error('Missing required parameter: prompt')
     }
     
+    console.log('🤖 Extracted Parameters:')
+    console.log('  - Prompt:', prompt.substring(0, 100) + (prompt.length > 100 ? '...' : ''))
+    console.log('  - Model:', model)
+    console.log('  - Stream:', stream)
+    console.log('  - Max Turns:', maxTurns)
+    console.log('  - System Prompt:', systemPrompt === '' ? '[EMPTY - Using Claude Code default]' : systemPrompt)
+    console.log('  - Permission Mode:', permissionMode)
+    console.log('  - Allowed Tools:', allowedTools)
+    console.log('  - Continue Session:', continueSession)
+    console.log('  - Resume Session ID:', resumeSessionId)
+    
+    // Configure Claude Code SDK options - filter out empty/undefined values
+    const options = {}
+    
+    // Always add systemPrompt (even if empty) to test if that fixes the hanging issue
+    if (systemPrompt !== undefined) {
+      options.systemPrompt = systemPrompt
+    }
+    
+    // Only add appendSystemPrompt if provided
+    if (appendSystemPrompt) {
+      options.appendSystemPrompt = appendSystemPrompt
+    }
+    
+    // Always include basic options
+    if (maxTurns) options.maxTurns = maxTurns
+    if (allowedTools) options.allowedTools = allowedTools
+    if (disallowedTools) options.disallowedTools = disallowedTools
+    if (permissionMode) options.permissionMode = permissionMode
+    if (permissionPromptTool) options.permissionPromptTool = permissionPromptTool
+    if (mcpConfig) options.mcpConfig = mcpConfig
+    if (cwd) options.cwd = cwd
+    if (executable) options.executable = executable
+    if (executableArgs || additionalArgs) options.executableArgs = executableArgs || additionalArgs
+    if (pathToClaudeCodeExecutable) options.pathToClaudeCodeExecutable = pathToClaudeCodeExecutable
+    
+    // Set defaults for required options
+    if (!options.permissionMode) options.permissionMode = 'default'
+    if (!options.cwd) options.cwd = process.cwd()
+    
+    console.log('🤖 Claude Code SDK Options:')
+    console.log(JSON.stringify(options, null, 2))
+    
     if (stream) {
-      // For streaming responses, we'll use Node.js streaming
+      // Streaming response
+      console.log('🌊 Starting streaming response')
       return new Response(
         new ReadableStream({
           async start(controller) {
             try {
-              // Force fresh session - no session continuation or resume
-              console.log(`🔄 Creating fresh session for streaming query`)
               let sessionId = null
               
-              // Create fresh AbortController for this request
+              // Create AbortController for this request
               const abortController = new AbortController()
               
-              for await (const message of query({ 
-                prompt, 
+              // Query parameters for Claude Code SDK
+              const queryParams = {
+                prompt,
                 abortController,
-                options: options
-              })) {
-                console.log('📤 SDK Message type:', message.type)
+                options: {
+                  ...options,
+                  // Add session management if specified
+                  ...(continueSession && { continueSession: true }),
+                  ...(resumeSessionId && { resumeSessionId })
+                }
+              }
+              
+              console.log('🚀 Starting Claude Code SDK query with parameters:')
+              console.log(JSON.stringify(queryParams, null, 2))
+              
+              for await (const message of query(queryParams)) {
+                console.log('📤 SDK Message:', message.type, message.subtype || '')
                 
                 // Capture session ID from init message
                 if (message.type === "system" && message.subtype === "init") {
                   sessionId = message.session_id
-                  console.log(`🆔 New session created: ${sessionId}`)
+                  console.log(`🆔 Session ID: ${sessionId}`)
                 }
                 
-                // Log all message content for debugging
-                if (message.type === "result") {
-                  console.log(`🔍 SDK Result Message:`, JSON.stringify(message, null, 2))
+                // Log result messages for debugging
+                if (message.type === "result" && verbose) {
+                  console.log(`🔍 Result:`, JSON.stringify(message, null, 2))
                 }
                 
                 // Stream different message types
@@ -138,7 +198,8 @@ app.post('/', async (c) => {
                 } else if (message.type === 'result') {
                   data = JSON.stringify({
                     type: 'result',
-                    result: message.result
+                    result: message.result,
+                    sessionId: sessionId
                   }) + '\n'
                 }
                 
@@ -147,13 +208,14 @@ app.post('/', async (c) => {
                 }
               }
               
-              console.log('✅ Claude Code SDK execution completed')
+              console.log('✅ Streaming completed for request:', requestId)
               controller.close()
             } catch (error) {
-              console.error('❌ Claude Code SDK streaming error:', error)
+              console.error('❌ Streaming error for request:', requestId, error)
               const errorData = JSON.stringify({
                 type: 'error',
-                error: error.message
+                error: error.message,
+                requestId: requestId
               }) + '\n'
               controller.enqueue(new TextEncoder().encode(errorData))
               controller.close()
@@ -168,32 +230,41 @@ app.post('/', async (c) => {
         }
       )
     } else {
-      // For non-streaming, collect all messages and return final result
+      // Non-streaming response
+      console.log('📝 Starting non-streaming response')
       const messages = []
-      
-      // Force fresh session - no session continuation or resume
-      console.log(`🔄 Creating fresh session for non-streaming query`)
       let sessionId = null
       
-      // Create fresh AbortController for this request
+      // Create AbortController for this request
       const abortController = new AbortController()
       
-      for await (const message of query({ 
-        prompt, 
+      // Query parameters for Claude Code SDK
+      const queryParams = {
+        prompt,
         abortController,
-        options: options
-      })) {
-        console.log('📤 SDK Message type:', message.type)
+        options: {
+          ...options,
+          // Add session management if specified
+          ...(continueSession && { continueSession: true }),
+          ...(resumeSessionId && { resumeSessionId })
+        }
+      }
+      
+      console.log('🚀 Starting Claude Code SDK query with parameters:')
+      console.log(JSON.stringify(queryParams, null, 2))
+      
+      for await (const message of query(queryParams)) {
+        console.log('📤 SDK Message:', message.type, message.subtype || '')
         
         // Capture session ID from init message
         if (message.type === "system" && message.subtype === "init") {
           sessionId = message.session_id
-          console.log(`🆔 New session created: ${sessionId}`)
+          console.log(`🆔 Session ID: ${sessionId}`)
         }
         
-        // Log all message content for debugging
-        if (message.type === "result") {
-          console.log(`🔍 SDK Result Message:`, JSON.stringify(message, null, 2))
+        // Log result messages for debugging
+        if (message.type === "result" && verbose) {
+          console.log(`🔍 Result:`, JSON.stringify(message, null, 2))
         }
         
         messages.push(message)
@@ -202,14 +273,18 @@ app.post('/', async (c) => {
       // Find the final result
       const result = messages.find(m => m.type === 'result')
       
-      console.log('✅ Claude Code SDK execution completed')
-      console.log(`🔍 Request: ${requestId}, Session: ${sessionId}, Result: ${result?.result || 'No result found'}`)
+      console.log('✅ Non-streaming completed for request:', requestId)
+      console.log(`🔍 Session: ${sessionId}, Result length: ${result?.result?.length || 0}`)
       
       return c.json({
         type: 'result',
         result: result?.result || 'No result found',
-        sessionId: sessionId, // Include session ID in response
-        messages: verbose ? messages : undefined
+        sessionId: sessionId,
+        requestId: requestId,
+        messages: verbose ? messages : undefined,
+        // Include metadata if available
+        ...(result?.total_cost_usd && { cost_usd: result.total_cost_usd }),
+        ...(result?.duration_ms && { duration_ms: result.duration_ms })
       })
     }
     

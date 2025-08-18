@@ -1,12 +1,42 @@
 import { Container } from '@cloudflare/containers'
 
 export interface ClaudeCodeOptions {
+	// Required
 	prompt: string
-	model?: string
-	stream?: boolean
-	verbose?: boolean
-	maxTurns?: number
-	additionalArgs?: string[]
+
+	// API Configuration
+	model?: string                    // Default: "groq/openai/gpt-oss-120b"
+	stream?: boolean                  // Default: true
+	verbose?: boolean                 // Default: false
+
+	// Claude Code SDK Core Options
+	maxTurns?: number                // Default: 3
+	systemPrompt?: string            // Default: "" (empty - let Claude Code use default)
+	appendSystemPrompt?: string      // Default: undefined
+	
+	// Tool Management
+	allowedTools?: string[]          // Default: undefined (all tools)
+	disallowedTools?: string[]       // Default: undefined
+	
+	// Session Management
+	continueSession?: boolean        // Default: false
+	resumeSessionId?: string         // Default: undefined
+	
+	// Permission & Security
+	permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"  // Default: "default"
+	permissionPromptTool?: string    // Default: undefined
+	
+	// MCP Configuration
+	mcpConfig?: string               // Default: undefined
+	
+	// Runtime Configuration
+	cwd?: string                     // Default: undefined
+	executable?: string              // Default: undefined
+	executableArgs?: string[]        // Default: undefined
+	pathToClaudeCodeExecutable?: string  // Default: undefined
+
+	// Legacy (for backward compatibility)
+	additionalArgs?: string[]        // Deprecated - use executableArgs
 }
 
 /**
@@ -47,46 +77,39 @@ export class ClaudeCodeContainer extends Container {
 	}
 
 	/**
-	 * Execute Claude Code with dynamic configuration via HTTP server
-	 * @param options - Claude Code execution options
-	 * @param envVars - Environment variables for API keys and configuration
+	 * Execute Claude Code with complete configuration via HTTP server
+	 * @param options - Complete Claude Code execution options
+	 * @param envVars - Environment variables for API configuration only
 	 */
 	async executeClaudeCode(
 		options: ClaudeCodeOptions,
 		envVars: Record<string, string>
 	): Promise<Response> {
-		// Set environment variables for the HTTP server
+		// Set environment variables (API configuration only)
 		this.envVars = {
-			...envVars,
-			CLAUDE_PROMPT: options.prompt,
-			ANTHROPIC_MODEL: options.model || 'claude-3-5-sonnet-20241022',
-			CLAUDE_STREAM: options.stream ? 'true' : 'false',
-			CLAUDE_VERBOSE: options.verbose ? 'true' : 'false',
-			CLAUDE_MAX_TURNS: String(options.maxTurns || 3), // Default to allow multiple turns
+			ANTHROPIC_BASE_URL: envVars.ANTHROPIC_BASE_URL,
+			ANTHROPIC_AUTH_TOKEN: envVars.ANTHROPIC_AUTH_TOKEN,
+			ANTHROPIC_API_KEY: envVars.ANTHROPIC_API_KEY,
 		}
 
-		console.log(`🤖 Starting Claude Code container with model: ${this.envVars.ANTHROPIC_MODEL}`)
+		console.log(`🤖 Starting Claude Code container`)
+		console.log(`🤖 API Base URL: ${this.envVars.ANTHROPIC_BASE_URL}`)
+		console.log(`🤖 Model: ${options.model}`)
+		console.log(`🤖 Max Turns: ${options.maxTurns}`)
 
 		// Start the container (HTTP server will start automatically)
 		await this.start()
 
-		// Create a POST request to the container's HTTP server with actual request data
+		// Create a POST request with complete options object
 		const request = new Request(`http://localhost:${this.defaultPort}/`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({
-				prompt: options.prompt,
-				model: options.model,
-				stream: options.stream,
-				verbose: options.verbose,
-				maxTurns: options.maxTurns,
-				additionalArgs: options.additionalArgs
-			}),
+			body: JSON.stringify(options), // Forward complete options object
 		})
 
-		console.log(`🤖 Sending request to container HTTP server`)
+		console.log(`🤖 Forwarding complete request to container HTTP server`)
 
 		// Forward request to the container and return the response
 		return await this.containerFetch(request)
