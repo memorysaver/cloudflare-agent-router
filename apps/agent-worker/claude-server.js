@@ -70,7 +70,7 @@ function renameSessionFolder(fromSandboxId, toSessionId) {
 		return true
 	} catch (error) {
 		console.error(`❌ Failed to rename session folder ${fromSandboxId} → ${toSessionId}:`, error)
-		
+
 		// Fallback: Create symlink if rename fails
 		try {
 			fs.symlinkSync(fromPath, toPath, 'dir')
@@ -287,21 +287,23 @@ app.post('/', async (c) => {
 
 							// SDK completed - now handle sandbox renaming before final response
 							console.log('🔄 SDK execution completed, processing session management...')
-							
+
 							// Handle temp sandbox renaming for new sessions
 							if (!sessionInfo.sessionId && sessionInfo.isTemp && capturedSessionId) {
-								console.log(`🔄 Renaming temp sandbox: ${sessionInfo.sandboxId} → ${capturedSessionId}`)
+								console.log(
+									`🔄 Renaming temp sandbox: ${sessionInfo.sandboxId} → ${capturedSessionId}`
+								)
 								const renameSuccess = renameSessionFolder(sessionInfo.sandboxId, capturedSessionId)
-								
+
 								if (renameSuccess) {
 									// Update session info with final paths
 									const finalSessionPath = path.join('/sessions', capturedSessionId)
-									sessionInfo = { 
-										sessionId: capturedSessionId, 
+									sessionInfo = {
+										sessionId: capturedSessionId,
 										sessionPath: finalSessionPath,
 										sandboxId: sessionInfo.sandboxId,
 										isTemp: false,
-										renamed: true
+										renamed: true,
 									}
 									console.log(`✅ Session folder renamed successfully`)
 								} else {
@@ -313,17 +315,18 @@ app.post('/', async (c) => {
 
 							// Stream the final result with correct session info
 							if (finalResultMessage) {
-								const finalData = JSON.stringify({
-									type: 'result',
-									result: finalResultMessage.result,
-									sessionId: capturedSessionId,
-									sessionPath: sessionInfo.sessionPath,
-									// Additional session metadata for temp sandbox tracking
-									...(sessionInfo.sandboxId && { originalSandboxId: sessionInfo.sandboxId }),
-									...(sessionInfo.renamed !== undefined && { renamed: sessionInfo.renamed }),
-									...(sessionInfo.isTemp !== undefined && { wasTemp: sessionInfo.isTemp }),
-								}) + '\n'
-								
+								const finalData =
+									JSON.stringify({
+										type: 'result',
+										result: finalResultMessage.result,
+										sessionId: capturedSessionId,
+										sessionPath: sessionInfo.sessionPath,
+										// Additional session metadata for temp sandbox tracking
+										...(sessionInfo.sandboxId && { originalSandboxId: sessionInfo.sandboxId }),
+										...(sessionInfo.renamed !== undefined && { renamed: sessionInfo.renamed }),
+										...(sessionInfo.isTemp !== undefined && { wasTemp: sessionInfo.isTemp }),
+									}) + '\n'
+
 								controller.enqueue(new TextEncoder().encode(finalData))
 							}
 
@@ -389,21 +392,21 @@ app.post('/', async (c) => {
 
 			// SDK completed - now handle sandbox renaming before response
 			console.log('🔄 SDK execution completed, processing session management...')
-			
+
 			// Handle temp sandbox renaming for new sessions
 			if (!sessionInfo.sessionId && sessionInfo.isTemp && capturedSessionId) {
 				console.log(`🔄 Renaming temp sandbox: ${sessionInfo.sandboxId} → ${capturedSessionId}`)
 				const renameSuccess = renameSessionFolder(sessionInfo.sandboxId, capturedSessionId)
-				
+
 				if (renameSuccess) {
 					// Update session info with final paths
 					const finalSessionPath = path.join('/sessions', capturedSessionId)
-					sessionInfo = { 
-						sessionId: capturedSessionId, 
+					sessionInfo = {
+						sessionId: capturedSessionId,
 						sessionPath: finalSessionPath,
 						sandboxId: sessionInfo.sandboxId,
 						isTemp: false,
-						renamed: true
+						renamed: true,
 					}
 					console.log(`✅ Session folder renamed successfully`)
 				} else {

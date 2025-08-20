@@ -97,7 +97,7 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 
 		// ULTRA-SIMPLE Session Management: Apply logic in Worker before container
 		let sessionWorkspacePath = requestBody.cwd
-		
+
 		if (requestBody.sessionId) {
 			// Auto-enable session resumption when sessionId provided
 			sessionWorkspacePath = `/sessions/${requestBody.sessionId}/workspace`
@@ -129,7 +129,8 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			// Session Management - use resumeSessionId for specific sessions, continueSession for most recent
 			sessionId: requestBody.sessionId,
 			...(requestBody.sessionId && { resumeSessionId: requestBody.sessionId }),
-			...(requestBody.resumeSessionId && !requestBody.sessionId && { resumeSessionId: requestBody.resumeSessionId }),
+			...(requestBody.resumeSessionId &&
+				!requestBody.sessionId && { resumeSessionId: requestBody.resumeSessionId }),
 			// Only use continueSession when no specific sessionId is provided - don't pass it at all when using resumeSessionId
 			...(requestBody.sessionId ? {} : { continueSession: requestBody.continueSession || false }),
 
