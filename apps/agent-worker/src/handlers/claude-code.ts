@@ -126,10 +126,12 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			allowedTools: requestBody.allowedTools,
 			disallowedTools: requestBody.disallowedTools,
 
-			// Session Management - Auto-enable continueSession when sessionId provided
+			// Session Management - use resumeSessionId for specific sessions, continueSession for most recent
 			sessionId: requestBody.sessionId,
-			continueSession: requestBody.sessionId ? true : (requestBody.continueSession || false),
-			resumeSessionId: requestBody.sessionId || requestBody.resumeSessionId,
+			...(requestBody.sessionId && { resumeSessionId: requestBody.sessionId }),
+			...(requestBody.resumeSessionId && !requestBody.sessionId && { resumeSessionId: requestBody.resumeSessionId }),
+			// Only use continueSession when no specific sessionId is provided - don't pass it at all when using resumeSessionId
+			...(requestBody.sessionId ? {} : { continueSession: requestBody.continueSession || false }),
 
 			// Permission & Security
 			permissionMode: requestBody.permissionMode || 'acceptEdits',

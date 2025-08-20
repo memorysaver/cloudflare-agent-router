@@ -196,10 +196,10 @@ app.post('/', async (c) => {
 			permissionMode: permissionMode || 'acceptEdits',
 			cwd: sessionWorkspacePath,
 			pathToClaudeCodeExecutable: pathToClaudeCodeExecutable || undefined, // undefined = SDK manages
-			// Session management - auto-enable continueSession when sessionId provided
-			continueSession: sessionId ? true : (continueSession || false),
-			// Add resumeSessionId if we have an existing session
+			// Session management - use resumeSessionId for specific sessions, continueSession for most recent
 			...(sessionId && { resumeSessionId: sessionId }),
+			// Only use continueSession when no specific sessionId is provided - don't pass it at all when using resumeSessionId
+			...(sessionId ? {} : { continueSession: continueSession || false }),
 		}
 
 		// Add optional parameters directly from request (no env var fallbacks)
