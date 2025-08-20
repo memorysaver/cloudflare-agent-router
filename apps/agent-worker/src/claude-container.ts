@@ -5,38 +5,39 @@ export interface ClaudeCodeOptions {
 	prompt: string
 
 	// API Configuration
-	model?: string                    // Default: "groq/openai/gpt-oss-120b"
-	stream?: boolean                  // Default: true
-	verbose?: boolean                 // Default: false
+	model?: string // Default: "groq/openai/gpt-oss-120b"
+	stream?: boolean // Default: true
+	verbose?: boolean // Default: false
 
 	// Claude Code SDK Core Options
-	maxTurns?: number                // Default: 3
-	systemPrompt?: string            // Default: "" (empty - let Claude Code use default)
-	appendSystemPrompt?: string      // Default: undefined
-	
+	maxTurns?: number // Default: 3
+	systemPrompt?: string // Default: "" (empty - let Claude Code use default)
+	appendSystemPrompt?: string // Default: undefined
+
 	// Tool Management
-	allowedTools?: string[]          // Default: undefined (all tools)
-	disallowedTools?: string[]       // Default: undefined
-	
+	allowedTools?: string[] // Default: undefined (all tools)
+	disallowedTools?: string[] // Default: undefined
+
 	// Session Management
-	continueSession?: boolean        // Default: false
-	resumeSessionId?: string         // Default: undefined
-	
+	sessionId?: string // Optional: provide to resume existing session
+	continueSession?: boolean // Default: false
+	resumeSessionId?: string // Default: undefined
+
 	// Permission & Security
-	permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"  // Default: "acceptEdits"
-	permissionPromptTool?: string    // Default: undefined
-	
+	permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' // Default: "acceptEdits"
+	permissionPromptTool?: string // Default: undefined
+
 	// MCP Configuration
-	mcpConfig?: string               // Default: undefined
-	
+	mcpConfig?: string // Default: undefined
+
 	// Runtime Configuration
-	cwd?: string                     // Default: undefined
-	executable?: string              // Default: undefined
-	executableArgs?: string[]        // Default: undefined
-	pathToClaudeCodeExecutable?: string  // Default: undefined
+	cwd?: string // Default: undefined
+	executable?: string // Default: undefined
+	executableArgs?: string[] // Default: undefined
+	pathToClaudeCodeExecutable?: string // Default: undefined
 
 	// Legacy (for backward compatibility)
-	additionalArgs?: string[]        // Deprecated - use executableArgs
+	additionalArgs?: string[] // Deprecated - use executableArgs
 }
 
 /**
@@ -110,15 +111,21 @@ export class ClaudeCodeContainer extends Container {
 		})
 
 		console.log(`🤖 Web Request Data Sent to Container:`)
-		console.log(`  - Prompt: ${options.prompt.substring(0, 50)}${options.prompt.length > 50 ? '...' : ''}`)
+		console.log(
+			`  - Prompt: ${options.prompt.substring(0, 50)}${options.prompt.length > 50 ? '...' : ''}`
+		)
 		console.log(`  - Model: ${options.model}`)
 		console.log(`  - Stream: ${options.stream}`)
 		console.log(`  - Verbose: ${options.verbose}`)
 		console.log(`  - Max Turns: ${options.maxTurns}`)
-		console.log(`  - System Prompt: ${options.systemPrompt === '' ? '[Empty - using Claude Code default]' : options.systemPrompt?.substring(0, 30) + '...'}`)
+		console.log(
+			`  - System Prompt: ${options.systemPrompt === '' ? '[Empty - using Claude Code default]' : options.systemPrompt?.substring(0, 30) + '...'}`
+		)
 		console.log(`  - Permission Mode: ${options.permissionMode}`)
 		console.log(`  - Continue Session: ${options.continueSession}`)
 		console.log(`  - Resume Session ID: ${options.resumeSessionId || '[None]'}`)
+		console.log(`  - Session ID: ${options.sessionId || '[None]'}`)
+		console.log(`  - Working Directory (cwd): ${options.cwd || '[Default]'}`)
 		console.log(`🤖 Complete Web Request Body:`)
 		console.log(JSON.stringify(options, null, 2))
 		console.log(`🤖 Forwarding request to container HTTP server`)

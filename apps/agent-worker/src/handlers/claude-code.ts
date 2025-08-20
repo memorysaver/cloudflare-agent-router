@@ -6,38 +6,39 @@ export interface ClaudeCodeRequest {
 	prompt: string
 
 	// API Configuration
-	model?: string                    // Default: "groq/openai/gpt-oss-120b"
-	stream?: boolean                  // Default: true
-	verbose?: boolean                 // Default: false
+	model?: string // Default: "groq/openai/gpt-oss-120b"
+	stream?: boolean // Default: true
+	verbose?: boolean // Default: false
 
 	// Claude Code SDK Core Options
-	maxTurns?: number                // Default: 3
-	systemPrompt?: string            // Default: "" (empty - let Claude Code use default)
-	appendSystemPrompt?: string      // Default: undefined
-	
+	maxTurns?: number // Default: 3
+	systemPrompt?: string // Default: "" (empty - let Claude Code use default)
+	appendSystemPrompt?: string // Default: undefined
+
 	// Tool Management
-	allowedTools?: string[]          // Default: undefined (all tools)
-	disallowedTools?: string[]       // Default: undefined
-	
+	allowedTools?: string[] // Default: undefined (all tools)
+	disallowedTools?: string[] // Default: undefined
+
 	// Session Management
-	continueSession?: boolean        // Default: false
-	resumeSessionId?: string         // Default: undefined
-	
+	sessionId?: string // Optional: provide to resume existing session
+	continueSession?: boolean // Default: false
+	resumeSessionId?: string // Default: undefined
+
 	// Permission & Security
-	permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"  // Default: "acceptEdits"
-	permissionPromptTool?: string    // Default: undefined
-	
+	permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' // Default: "acceptEdits"
+	permissionPromptTool?: string // Default: undefined
+
 	// MCP Configuration
-	mcpConfig?: string               // Default: undefined
-	
+	mcpConfig?: string // Default: undefined
+
 	// Runtime Configuration
-	cwd?: string                     // Default: undefined
-	executable?: string              // Default: undefined
-	executableArgs?: string[]        // Default: undefined
-	pathToClaudeCodeExecutable?: string  // Default: undefined
+	cwd?: string // Default: undefined
+	executable?: string // Default: undefined
+	executableArgs?: string[] // Default: undefined
+	pathToClaudeCodeExecutable?: string // Default: undefined
 
 	// Legacy (for backward compatibility)
-	additionalArgs?: string[]        // Deprecated - use executableArgs
+	additionalArgs?: string[] // Deprecated - use executableArgs
 }
 
 export interface ClaudeCodeError {
@@ -94,6 +95,18 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			`🤖 Processing Claude Code request with prompt: "${requestBody.prompt.substring(0, 50)}..."`
 		)
 
+		// ULTRA-SIMPLE Session Management: Apply logic in Worker before container
+		let sessionWorkspacePath = requestBody.cwd
+		
+		if (requestBody.sessionId) {
+			// Auto-enable session resumption when sessionId provided
+			sessionWorkspacePath = `/sessions/${requestBody.sessionId}/workspace`
+			console.log(`🗂️ Session resumption enabled for session: ${requestBody.sessionId}`)
+			console.log(`📁 Working directory set to: ${sessionWorkspacePath}`)
+		} else {
+			console.log('🆕 New session will be created (no sessionId provided)')
+		}
+
 		// Prepare complete Claude Code options with defaults
 		const options: ClaudeCodeRequest = {
 			// Required
@@ -105,7 +118,7 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			verbose: requestBody.verbose || false,
 
 			// Claude Code SDK Core Options
-			maxTurns: requestBody.maxTurns || 3,
+			maxTurns: requestBody.maxTurns || 10,
 			systemPrompt: requestBody.systemPrompt !== undefined ? requestBody.systemPrompt : '', // Default to empty string
 			appendSystemPrompt: requestBody.appendSystemPrompt,
 
@@ -113,9 +126,10 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			allowedTools: requestBody.allowedTools,
 			disallowedTools: requestBody.disallowedTools,
 
-			// Session Management
-			continueSession: requestBody.continueSession || false,
-			resumeSessionId: requestBody.resumeSessionId,
+			// Session Management - Auto-enable continueSession when sessionId provided
+			sessionId: requestBody.sessionId,
+			continueSession: requestBody.sessionId ? true : (requestBody.continueSession || false),
+			resumeSessionId: requestBody.sessionId || requestBody.resumeSessionId,
 
 			// Permission & Security
 			permissionMode: requestBody.permissionMode || 'acceptEdits',
@@ -125,7 +139,7 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			mcpConfig: requestBody.mcpConfig,
 
 			// Runtime Configuration
-			cwd: requestBody.cwd,
+			cwd: sessionWorkspacePath, // Use session workspace path when sessionId provided
 			executable: requestBody.executable,
 			executableArgs: requestBody.executableArgs,
 			pathToClaudeCodeExecutable: requestBody.pathToClaudeCodeExecutable,
@@ -137,7 +151,8 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 		// Prepare environment variables (API configuration only)
 		const envVars: Record<string, string> = {
 			ANTHROPIC_AUTH_TOKEN: c.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
-			ANTHROPIC_BASE_URL: c.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
+			ANTHROPIC_BASE_URL:
+				c.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
 		}
 
 		// Add optional API key if provided

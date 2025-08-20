@@ -23,10 +23,11 @@ curl -X POST http://localhost:8788/claude-code \
 ```
 
 Response:
+
 ```json
 {
   "type": "result",
-  "result": "4", 
+  "result": "4",
   "sessionId": "abc123...",
   "requestId": "req_...",
   "cost_usd": 0.000444,
@@ -78,38 +79,38 @@ LiteLLM Router → AI Models
 
 #### Required Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `prompt` | `string` | **Required.** The query or task to send to Claude Code |
+| Parameter | Type     | Description                                            |
+| --------- | -------- | ------------------------------------------------------ |
+| `prompt`  | `string` | **Required.** The query or task to send to Claude Code |
 
 #### API Configuration
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model` | `string` | `"groq/openai/gpt-oss-120b"` | AI model (any LiteLLM-compatible model) |
-| `stream` | `boolean` | `false` | Enable real-time streaming responses |
-| `verbose` | `boolean` | `false` | Include detailed logs and full message history |
+| Parameter | Type      | Default                      | Description                                    |
+| --------- | --------- | ---------------------------- | ---------------------------------------------- |
+| `model`   | `string`  | `"groq/openai/gpt-oss-120b"` | AI model (any LiteLLM-compatible model)        |
+| `stream`  | `boolean` | `false`                      | Enable real-time streaming responses           |
+| `verbose` | `boolean` | `false`                      | Include detailed logs and full message history |
 
 #### Claude Code SDK Parameters
 
 All Claude Code SDK parameters are supported directly. See [Claude Code SDK documentation](https://docs.anthropic.com/en/docs/claude-code/sdk#type-script) for complete reference.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `maxTurns` | `number` | `3` | Maximum conversation turns |
-| `systemPrompt` | `string` | `""` | Custom system prompt (empty = Claude Code default) |
-| `appendSystemPrompt` | `string` | `undefined` | Additional context for system prompt |
-| `allowedTools` | `string[]` | `undefined` | Specific tools to enable (undefined = all tools) |
-| `disallowedTools` | `string[]` | `undefined` | Tools to disable |
-| `continueSession` | `boolean` | `false` | Continue from previous session |
-| `resumeSessionId` | `string` | `undefined` | Session ID to resume |
-| `permissionMode` | `"default" \| "acceptEdits" \| "plan" \| "bypassPermissions"` | `"bypassPermissions"` | Permission level |
-| `permissionPromptTool` | `string` | `undefined` | Custom permission tool |
-| `mcpConfig` | `string` | `undefined` | MCP server configuration |
-| `cwd` | `string` | `undefined` | Working directory |
-| `executable` | `string` | `undefined` | Custom executable path |
-| `executableArgs` | `string[]` | `undefined` | Additional executable arguments |
-| `pathToClaudeCodeExecutable` | `string` | `undefined` | Full path to Claude Code binary |
+| Parameter                    | Type                                                          | Default               | Description                                        |
+| ---------------------------- | ------------------------------------------------------------- | --------------------- | -------------------------------------------------- |
+| `maxTurns`                   | `number`                                                      | `3`                   | Maximum conversation turns                         |
+| `systemPrompt`               | `string`                                                      | `""`                  | Custom system prompt (empty = Claude Code default) |
+| `appendSystemPrompt`         | `string`                                                      | `undefined`           | Additional context for system prompt               |
+| `allowedTools`               | `string[]`                                                    | `undefined`           | Specific tools to enable (undefined = all tools)   |
+| `disallowedTools`            | `string[]`                                                    | `undefined`           | Tools to disable                                   |
+| `continueSession`            | `boolean`                                                     | `false`               | Continue from previous session                     |
+| `resumeSessionId`            | `string`                                                      | `undefined`           | Session ID to resume                               |
+| `permissionMode`             | `"default" \| "acceptEdits" \| "plan" \| "bypassPermissions"` | `"bypassPermissions"` | Permission level                                   |
+| `permissionPromptTool`       | `string`                                                      | `undefined`           | Custom permission tool                             |
+| `mcpConfig`                  | `string`                                                      | `undefined`           | MCP server configuration                           |
+| `cwd`                        | `string`                                                      | `undefined`           | Working directory                                  |
+| `executable`                 | `string`                                                      | `undefined`           | Custom executable path                             |
+| `executableArgs`             | `string[]`                                                    | `undefined`           | Additional executable arguments                    |
+| `pathToClaudeCodeExecutable` | `string`                                                      | `undefined`           | Full path to Claude Code binary                    |
 
 ### Response Formats
 
@@ -119,7 +120,7 @@ All Claude Code SDK parameters are supported directly. See [Claude Code SDK docu
 {
   type: "result"
   result: string          // Claude Code output
-  sessionId: string       // Unique session identifier  
+  sessionId: string       // Unique session identifier
   requestId: string       // Unique request identifier
   cost_usd?: number      // Execution cost (if available)
   duration_ms?: number   // Execution time in milliseconds
@@ -157,12 +158,12 @@ The proxy uses minimal environment variables for LiteLLM router configuration on
 
 Only these environment variables are injected into the container:
 
-| Environment Variable | Source | Purpose |
-|---------------------|--------|---------|
-| `ANTHROPIC_MODEL` | Request `model` or default | Model for LiteLLM router |
-| `ANTHROPIC_BASE_URL` | Worker configuration | LiteLLM router URL |
-| `ANTHROPIC_AUTH_TOKEN` | Worker configuration | Authentication mode |
-| `ANTHROPIC_API_KEY` | Worker configuration | API key (if provided) |
+| Environment Variable   | Source                     | Purpose                  |
+| ---------------------- | -------------------------- | ------------------------ |
+| `ANTHROPIC_MODEL`      | Request `model` or default | Model for LiteLLM router |
+| `ANTHROPIC_BASE_URL`   | Worker configuration       | LiteLLM router URL       |
+| `ANTHROPIC_AUTH_TOKEN` | Worker configuration       | Authentication mode      |
+| `ANTHROPIC_API_KEY`    | Worker configuration       | API key (if provided)    |
 
 ### Data Flow
 
@@ -172,6 +173,7 @@ Only these environment variables are injected into the container:
 4. **SDK Execution**: Following official Claude Code SDK patterns
 
 Example mapping:
+
 ```javascript
 // HTTP Request
 {
@@ -313,6 +315,7 @@ docker logs -f <container_id>
 **Symptoms**: HTTP request hangs or times out
 
 **Debug Steps**:
+
 1. Check container logs for errors
 2. Verify model exists: `curl https://litellm-router.memorysaver.workers.dev/v1/models`
 3. Test with known working model: `"groq/openai/gpt-oss-120b"`
@@ -322,6 +325,7 @@ docker logs -f <container_id>
 **Symptoms**: Error responses about model not found
 
 **Solutions**:
+
 1. Check available models: `curl https://litellm-router.memorysaver.workers.dev/v1/models`
 2. Use full model name (e.g., `"groq/openai/gpt-oss-120b"` not `"gpt-oss-120b"`)
 3. Verify LiteLLM router is accessible
@@ -331,6 +335,7 @@ docker logs -f <container_id>
 **Symptoms**: Claude Code ignores parameter
 
 **Debug Steps**:
+
 1. Check parameter name matches Claude Code SDK documentation
 2. Verify parameter type (string vs number vs boolean)
 3. Enable verbose logging: `"verbose": true`
@@ -347,8 +352,9 @@ The proxy provides detailed logging:
 ```
 
 Enable verbose mode for complete Claude Code SDK logs:
+
 ```json
-{"verbose": true}
+{ "verbose": true }
 ```
 
 ## Deployment
