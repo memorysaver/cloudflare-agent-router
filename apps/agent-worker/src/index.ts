@@ -7,7 +7,7 @@ import { ClaudeCodeAgent } from './agents/claude-code-agent'
 import { ClaudeCodeContainer } from './claude-container'
 import { handleAgentMessage, handleAgentWebSocket } from './handlers/claude-agent'
 import { handleClaudeCode } from './handlers/claude-code'
-import { handleDemo } from './handlers/demo'
+import { handleDemo, handleDemoHealth } from './handlers/demo'
 
 import type { App } from './context'
 
@@ -34,6 +34,8 @@ const app = new Hono<App>()
 
 	// Claude Code Agent Framework endpoints (new)
 	.get('/demo', handleDemo)
+	.get('/demo/', handleDemo) // Handle trailing slash for better UX
+	.get('/demo/health', handleDemoHealth) // Must be before parameterized route
 	.get('/demo/:sessionId', handleDemo)
 	.get('/demo/ws/:sessionId', handleAgentWebSocket)
 	.post('/agent/message', handleAgentMessage)
