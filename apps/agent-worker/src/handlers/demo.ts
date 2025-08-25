@@ -273,6 +273,12 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 					const message = JSON.parse(event.data);
 					console.log('Received:', message);
 
+					// Remove typing indicator when we get actual responses
+					const typingIndicator = document.getElementById('typing-indicator');
+					if (typingIndicator && (message.type === 'result' || message.type === 'error' || message.type === 'tool_use' || message.type === 'file_change')) {
+						typingIndicator.remove();
+					}
+
 					if (message.type === 'status') {
 						updateStatus(message.content);
 					} else if (message.type === 'error') {

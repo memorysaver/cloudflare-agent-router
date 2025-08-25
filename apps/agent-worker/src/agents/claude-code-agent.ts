@@ -50,9 +50,10 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	private outputParser: ClaudeOutputParser
 
 	/**
-	 * Initial state for the Agent (AIChatAgent manages messages internally)
+	 * Initial state for the Agent
 	 */
 	initialState = {
+		messages: [],
 		isRunning: false,
 		lastActivity: Date.now(),
 		claudeSession: {
@@ -107,15 +108,8 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			const data = typeof message.data === 'string' ? JSON.parse(message.data) : message.data
 			
 			if (data.type === 'user_message' && data.content) {
-				// Process the user message
-				await this.processMessage(data.content)
-				
-				// Send response back via WebSocket
-				connection.send(JSON.stringify({
-					type: 'agent_response',
-					content: `Processing: ${data.content}`,
-					timestamp: Date.now()
-				}))
+				// Process the user message with WebSocket connection for real-time responses
+				await this.processMessage(data.content, connection)
 			}
 		} catch (error) {
 			console.error('ClaudeCodeAgent onMessage error:', error)
@@ -176,14 +170,45 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	 * Process incoming user messages (for WebSocket calls)
 	 */
 	async processMessage(content: string): Promise<void> {
-		// This method is called from WebSocket handler
-		// For now, just update state - full integration would stream responses back
 		console.log('Processing WebSocket message:', content)
 		
+		// Update running state
 		this.setState({
 			...this.state,
+			isRunning: true,
 			lastActivity: Date.now()
 		})
+
+		try {
+			// Execute Claude Code via container
+			const executionStream = await this.containerBridge.execute(content, {
+				sessionId: this.getSessionId(),
+				workspacePath: this.getWorkspacePath(),
+				context: this.getConversationContext()
+			})
+
+			// Process the streaming response
+			await this.processClaudeStream(executionStream)
+
+		} catch (error) {
+			console.error('ClaudeCodeAgent processMessage error:', error)
+			
+			// Store error message in state for WebSocket handler to retrieve
+			const errorMessage: AgentMessage = {
+				id: this.generateId(),
+				role: 'assistant',
+				content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+				type: 'error',
+				timestamp: Date.now()
+			}
+			this.addMessageToState(errorMessage)
+		} finally {
+			this.setState({
+				...this.state,
+				isRunning: false,
+				lastActivity: Date.now()
+			})
+		}
 	}
 
 	/**
@@ -202,14 +227,34 @@ export class ClaudeCodeAgent extends Agent<Env> {
 				const messages = this.outputParser.parseBuffer(buffer)
 
 				for (const message of messages) {
-					this.addMessage(message)
-					// Note: Broadcasting would need to be implemented with agent framework
-					// For now, messages are stored in state and can be retrieved by clients
+					this.addMessageToState(message)
+					console.log('Parsed message:', message)
+					
+					// Messages are now stored in state and retrieved by the WebSocket handler
 				}
 			}
 		} finally {
 			reader.releaseLock()
 		}
+	}
+
+	/**
+	 * Add message to agent state
+	 */
+	private addMessageToState(message: AgentMessage): void {
+		const currentMessages = this.state.messages || []
+		this.setState({
+			...this.state,
+			messages: [...currentMessages, message],
+			lastActivity: Date.now()
+		})
+	}
+
+	/**
+	 * Get current agent state (for WebSocket handler)
+	 */
+	async getState(): Promise<AgentSessionState> {
+		return this.state
 	}
 
 	/**
@@ -343,6 +388,24 @@ export class ClaudeOutputParser {
 
 		// Skip empty lines
 		if (!cleanLine.trim()) return null
+
+		// Try to parse as Claude Code JSON response first
+		try {
+			if (cleanLine.startsWith('{') && cleanLine.endsWith('}')) {
+				const parsed = JSON.parse(cleanLine)
+				if (parsed.type && parsed.result !== undefined) {
+					return {
+						id: this.generateId(),
+						role: 'assistant',
+						content: parsed.result,
+						type: parsed.type === 'result' ? 'result' : parsed.type,
+						timestamp: Date.now()
+					}
+				}
+			}
+		} catch (error) {
+			// Not JSON, continue with text parsing
+		}
 
 		// Detect message type and parse accordingly
 		if (cleanLine.startsWith('🔧 ')) {

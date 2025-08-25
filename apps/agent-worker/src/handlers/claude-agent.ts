@@ -40,17 +40,24 @@ export function handleAgentWebSocket(c: Context<App>) {
 					const agentId = c.env.CLAUDE_CODE_AGENT.idFromName('claude-agent-session')
 					const agent = c.env.CLAUDE_CODE_AGENT.get(agentId)
 
-					// Process message through agent
+					// Process message through agent (without WebSocket connection - can't serialize)
 					await agent.processMessage(message.content)
-
-					// Note: Real-time responses will be sent via agent.broadcast()
-					// which would need to be connected to this WebSocket
-					// For now, send confirmation
-					ws.send(JSON.stringify({
-						type: 'status',
-						content: 'Message received and processing...',
-						timestamp: Date.now()
-					} as WSMessage))
+					
+					// Get the latest messages from agent state
+					const state = await agent.getState()
+					const messages = state.messages || []
+					
+					// Send the latest messages to WebSocket client
+					if (messages.length > 0) {
+						const latestMessage = messages[messages.length - 1]
+						if (latestMessage && latestMessage.content) {
+							ws.send(JSON.stringify({
+								type: latestMessage.type || 'result',
+								content: latestMessage.content,
+								timestamp: latestMessage.timestamp
+							}))
+						}
+					}
 				}
 			} catch (error) {
 				console.error('❌ WebSocket message processing error:', error)
