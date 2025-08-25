@@ -2,10 +2,71 @@ import type { Context } from 'hono'
 import type { App } from '../context'
 
 /**
- * Generate a unique session ID
+ * Session metadata interface
+ */
+interface SessionMetadata {
+	id: string
+	createdAt: number
+	userAgent?: string
+	ipAddress?: string
+	lastActivity?: number
+}
+
+/**
+ * Simple in-memory session storage (could be enhanced with KV storage later)
+ */
+const sessionStore = new Map<string, SessionMetadata>()
+
+/**
+ * Generate a unique session ID using crypto.randomUUID for better uniqueness
  */
 function generateSessionId(): string {
-	return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+	// Use crypto.randomUUID() if available (Cloudflare Workers supports it)
+	if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+		return crypto.randomUUID()
+	}
+	// Fallback to timestamp + random for better uniqueness than just Math.random()
+	const timestamp = Date.now().toString(36)
+	const randomPart = Math.random().toString(36).substring(2, 15)
+	const randomPart2 = Math.random().toString(36).substring(2, 15)
+	return `${timestamp}-${randomPart}-${randomPart2}`
+}
+
+/**
+ * Validate session ID format
+ */
+function isValidSessionId(sessionId: string): boolean {
+	// UUID format (with crypto.randomUUID) or timestamp-based fallback format
+	const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+	const fallbackPattern = /^[a-z0-9]+-[a-z0-9]+-[a-z0-9]+$/i
+	return uuidPattern.test(sessionId) || fallbackPattern.test(sessionId)
+}
+
+/**
+ * Create session metadata and store it
+ */
+function createSessionMetadata(c: Context<App>, sessionId: string): SessionMetadata {
+	const metadata: SessionMetadata = {
+		id: sessionId,
+		createdAt: Date.now(),
+		userAgent: c.req.header('user-agent'),
+		ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
+		lastActivity: Date.now()
+	}
+	
+	sessionStore.set(sessionId, metadata)
+	return metadata
+}
+
+/**
+ * Update session activity
+ */
+function updateSessionActivity(sessionId: string): void {
+	const metadata = sessionStore.get(sessionId)
+	if (metadata) {
+		metadata.lastActivity = Date.now()
+		sessionStore.set(sessionId, metadata)
+	}
 }
 
 /**
@@ -18,8 +79,28 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 	// If no session ID, create new one and redirect
 	if (!sessionId) {
 		const newSessionId = generateSessionId()
-		return c.redirect(`/demo/${newSessionId}`)
+		console.log(`📝 Creating new demo session: ${newSessionId}`)
+		
+		// Create session metadata
+		createSessionMetadata(c, newSessionId)
+		
+		// Use 302 redirect for better UX (temporary redirect)
+		return c.redirect(`/demo/${newSessionId}`, 302)
 	}
+
+	// Validate session ID format
+	if (!isValidSessionId(sessionId)) {
+		console.warn(`⚠️ Invalid session ID format: ${sessionId}`)
+		// Redirect to new session instead of showing error
+		const newSessionId = generateSessionId()
+		console.log(`🔄 Redirecting invalid session to new session: ${newSessionId}`)
+		createSessionMetadata(c, newSessionId)
+		return c.redirect(`/demo/${newSessionId}`, 302)
+	}
+
+	// Update session activity
+	updateSessionActivity(sessionId)
+	console.log(`🎯 Serving demo interface for session: ${sessionId}`)
 	const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -606,4 +687,38 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 			'Content-Type': 'text/html; charset=utf-8',
 		},
 	})
+}
+
+/**
+ * Handle session health check and analytics
+ */
+export async function handleDemoHealth(c: Context<App>): Promise<Response> {
+	const now = Date.now()
+	const activeThreshold = 30 * 60 * 1000 // 30 minutes
+	
+	// Clean up old sessions (older than 30 minutes of inactivity)
+	for (const [sessionId, metadata] of sessionStore.entries()) {
+		if (metadata.lastActivity && (now - metadata.lastActivity) > activeThreshold) {
+			sessionStore.delete(sessionId)
+		}
+	}
+	
+	// Get active sessions
+	const activeSessions = Array.from(sessionStore.values()).filter(
+		metadata => metadata.lastActivity && (now - metadata.lastActivity) <= activeThreshold
+	)
+	
+	const stats = {
+		totalSessions: sessionStore.size,
+		activeSessions: activeSessions.length,
+		activeSessionsData: activeSessions.map(session => ({
+			id: session.id.substring(0, 8) + '...',  // Truncate for privacy
+			createdAt: new Date(session.createdAt).toISOString(),
+			lastActivity: session.lastActivity ? new Date(session.lastActivity).toISOString() : null,
+			userAgent: session.userAgent?.substring(0, 50) + '...' || 'Unknown'
+		})),
+		timestamp: new Date(now).toISOString()
+	}
+	
+	return c.json(stats)
 }
