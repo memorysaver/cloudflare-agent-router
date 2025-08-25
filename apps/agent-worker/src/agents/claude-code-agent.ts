@@ -53,7 +53,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 
 	// Type-safe state access
 	get typedState(): AgentSessionState {
-		return this.typedState as AgentSessionState
+		return this.state as AgentSessionState
 	}
 
 	/**
