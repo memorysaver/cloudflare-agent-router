@@ -34,6 +34,7 @@ const app = new Hono<App>()
 
 	// Claude Code Agent Framework endpoints (new)
 	.get('/demo', handleDemo)
+	.get('/demo/', handleDemo) // Handle trailing slash for better UX
 	.get('/demo/health', handleDemoHealth) // Must be before parameterized route
 	.get('/demo/:sessionId', handleDemo)
 	.get('/demo/ws/:sessionId', handleAgentWebSocket)
