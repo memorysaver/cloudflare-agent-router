@@ -7,11 +7,13 @@ This document outlines the integration of Claude Code SDK with Cloudflare's Agen
 ## Architecture Comparison
 
 ### Current Architecture (REST API)
+
 ```
 Web UI → agent-worker (REST API) → ClaudeCodeContainer (Durable Object) → Container Runtime → Claude Code CLI
 ```
 
 **Limitations:**
+
 - REST API requires polling for updates
 - No real-time progress indicators
 - Basic session management
@@ -19,11 +21,13 @@ Web UI → agent-worker (REST API) → ClaudeCodeContainer (Durable Object) → 
 - No WebSocket streaming
 
 ### Proposed Architecture (Agent Framework)
+
 ```
 Web UI → agent-worker (WebSocket) → ClaudeCodeAgent (Durable Object) → Container Runtime → Claude Code CLI
 ```
 
 **Benefits:**
+
 - Real-time WebSocket communication
 - Enhanced session management with agent framework
 - Streaming progress indicators
@@ -34,6 +38,7 @@ Web UI → agent-worker (WebSocket) → ClaudeCodeAgent (Durable Object) → Con
 ## Detailed Call Stack
 
 ### 1. User Interaction Flow
+
 ```
 User Input (Web UI)
     ↓ WebSocket Message
@@ -55,12 +60,14 @@ Real-time UI Updates
 ### 2. Component Interaction Details
 
 #### **Web UI Layer**
+
 - **Technology**: React + Cloudflare Agent Framework Hooks
 - **Connection**: WebSocket to ClaudeCodeAgent
 - **State**: Real-time message updates, progress indicators
 - **Features**: Chat interface, streaming responses, session management
 
 #### **ClaudeCodeAgent (Durable Object)**
+
 - **Extends**: `AIChatAgent<Env>` from Cloudflare agent framework
 - **Responsibilities**:
   - Session state management in Durable Object storage
@@ -72,29 +79,30 @@ Real-time UI Updates
   ```typescript
   interface AgentSessionState {
     // Agent framework standard state
-    messages: Message[];
-    isRunning: boolean;
-    lastActivity: number;
-    
+    messages: Message[]
+    isRunning: boolean
+    lastActivity: number
+
     // Claude Code specific state
     claudeSession: {
-      id: string;
-      workspacePath: string;
-      lastCommand: string;
-      sessionFiles: string[];
-      activeTools: string[];
-    };
-    
+      id: string
+      workspacePath: string
+      lastCommand: string
+      sessionFiles: string[]
+      activeTools: string[]
+    }
+
     // Container management
     containerState: {
-      isActive: boolean;
-      lastHeartbeat: number;
-      resourceUsage: ContainerMetrics;
-    };
+      isActive: boolean
+      lastHeartbeat: number
+      resourceUsage: ContainerMetrics
+    }
   }
   ```
 
 #### **Container Execution Layer**
+
 - **Technology**: `@cloudflare/containers` (existing)
 - **Responsibilities**:
   - Claude Code CLI execution
@@ -104,6 +112,7 @@ Real-time UI Updates
 - **Integration**: Receives execution context from ClaudeCodeAgent
 
 #### **Output Processing Pipeline**
+
 1. **Raw CLI Output** → Container streams raw text/ANSI
 2. **Output Parser** → Converts CLI output to structured messages
 3. **Message Types**:
@@ -119,9 +128,9 @@ Real-time UI Updates
 
 ```typescript
 export class ClaudeCodeAgent extends AIChatAgent<Env> {
-  private containerBridge: ClaudeContainerBridge;
-  private sessionManager: ClaudeSessionManager;
-  private outputParser: ClaudeOutputParser;
+  private containerBridge: ClaudeContainerBridge
+  private sessionManager: ClaudeSessionManager
+  private outputParser: ClaudeOutputParser
 
   /**
    * Process incoming user messages
@@ -132,26 +141,26 @@ export class ClaudeCodeAgent extends AIChatAgent<Env> {
       id: generateId(),
       role: 'user',
       content,
-      timestamp: Date.now()
-    });
+      timestamp: Date.now(),
+    })
 
     // 2. Update running state
-    await this.setState({ isRunning: true });
+    await this.setState({ isRunning: true })
 
     try {
       // 3. Execute Claude Code via container
       const executionStream = await this.containerBridge.execute(content, {
         sessionId: this.sessionManager.getSessionId(),
         workspacePath: this.sessionManager.getWorkspacePath(),
-        context: this.getConversationContext()
-      });
+        context: this.getConversationContext(),
+      })
 
       // 4. Process streaming output
-      await this.processClaudeStream(executionStream);
+      await this.processClaudeStream(executionStream)
     } catch (error) {
-      await this.handleError(error);
+      await this.handleError(error)
     } finally {
-      await this.setState({ isRunning: false });
+      await this.setState({ isRunning: false })
     }
   }
 
@@ -159,24 +168,24 @@ export class ClaudeCodeAgent extends AIChatAgent<Env> {
    * Process streaming output from Claude Code
    */
   private async processClaudeStream(stream: ReadableStream): Promise<void> {
-    const reader = stream.getReader();
-    let buffer = '';
+    const reader = stream.getReader()
+    let buffer = ''
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        const { done, value } = await reader.read()
+        if (done) break
 
-        buffer += new TextDecoder().decode(value);
-        const messages = this.outputParser.parseBuffer(buffer);
-        
+        buffer += new TextDecoder().decode(value)
+        const messages = this.outputParser.parseBuffer(buffer)
+
         for (const message of messages) {
-          await this.addMessage(message);
-          await this.broadcast(message); // Real-time WebSocket update
+          await this.addMessage(message)
+          await this.broadcast(message) // Real-time WebSocket update
         }
       }
     } finally {
-      reader.releaseLock();
+      reader.releaseLock()
     }
   }
 
@@ -184,10 +193,8 @@ export class ClaudeCodeAgent extends AIChatAgent<Env> {
    * Get conversation context for Claude Code
    */
   private getConversationContext(): string {
-    const recentMessages = this.messages.slice(-10); // Last 10 messages
-    return recentMessages
-      .map(m => `${m.role}: ${m.content}`)
-      .join('\n');
+    const recentMessages = this.messages.slice(-10) // Last 10 messages
+    return recentMessages.map((m) => `${m.role}: ${m.content}`).join('\n')
   }
 }
 ```
@@ -196,15 +203,12 @@ export class ClaudeCodeAgent extends AIChatAgent<Env> {
 
 ```typescript
 export class ClaudeContainerBridge {
-  private container: Container;
-  
+  private container: Container
+
   /**
    * Execute Claude Code with agent context
    */
-  async execute(
-    prompt: string,
-    options: ClaudeExecutionOptions
-  ): Promise<ReadableStream> {
+  async execute(prompt: string, options: ClaudeExecutionOptions): Promise<ReadableStream> {
     // Prepare Claude Code execution options
     const claudeOptions = {
       prompt,
@@ -216,23 +220,23 @@ export class ClaudeContainerBridge {
       permissionMode: 'acceptEdits' as const,
       // Include conversation context as system prompt appendix
       appendSystemPrompt: `Previous conversation context:\n${options.context}`,
-    };
+    }
 
     // Start container if not running
     if (!this.container || !this.container.isRunning) {
-      this.container = new Container();
-      await this.container.start();
+      this.container = new Container()
+      await this.container.start()
     }
 
     // Execute Claude Code
     const request = new Request('http://localhost:3000/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(claudeOptions)
-    });
+      body: JSON.stringify(claudeOptions),
+    })
 
-    const response = await this.container.fetch(request);
-    return response.body!;
+    const response = await this.container.fetch(request)
+    return response.body!
   }
 }
 ```
@@ -241,29 +245,29 @@ export class ClaudeContainerBridge {
 
 ```typescript
 export class ClaudeOutputParser {
-  private buffer: string = '';
-  private messageQueue: Message[] = [];
+  private buffer: string = ''
+  private messageQueue: Message[] = []
 
   /**
    * Parse streaming CLI output into structured messages
    */
   parseBuffer(newData: string): Message[] {
-    this.buffer += newData;
-    const lines = this.buffer.split('\n');
-    
+    this.buffer += newData
+    const lines = this.buffer.split('\n')
+
     // Keep last incomplete line in buffer
-    this.buffer = lines.pop() || '';
-    
-    const messages: Message[] = [];
-    
+    this.buffer = lines.pop() || ''
+
+    const messages: Message[] = []
+
     for (const line of lines) {
-      const message = this.parseLine(line);
+      const message = this.parseLine(line)
       if (message) {
-        messages.push(message);
+        messages.push(message)
       }
     }
-    
-    return messages;
+
+    return messages
   }
 
   /**
@@ -271,10 +275,10 @@ export class ClaudeOutputParser {
    */
   private parseLine(line: string): Message | null {
     // Remove ANSI escape codes
-    const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
-    
+    const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '')
+
     // Skip empty lines
-    if (!cleanLine.trim()) return null;
+    if (!cleanLine.trim()) return null
 
     // Detect message type and parse accordingly
     if (cleanLine.startsWith('🔧 ')) {
@@ -283,32 +287,32 @@ export class ClaudeOutputParser {
         role: 'assistant',
         content: cleanLine.substring(2).trim(),
         type: 'tool_use',
-        timestamp: Date.now()
-      };
+        timestamp: Date.now(),
+      }
     } else if (cleanLine.startsWith('❌ ')) {
       return {
         id: generateId(),
         role: 'assistant',
         content: cleanLine.substring(2).trim(),
         type: 'error',
-        timestamp: Date.now()
-      };
+        timestamp: Date.now(),
+      }
     } else if (cleanLine.includes('file:')) {
       return {
         id: generateId(),
         role: 'assistant',
         content: cleanLine,
         type: 'file_change',
-        timestamp: Date.now()
-      };
+        timestamp: Date.now(),
+      }
     } else {
       return {
         id: generateId(),
         role: 'assistant',
         content: cleanLine,
         type: 'result',
-        timestamp: Date.now()
-      };
+        timestamp: Date.now(),
+      }
     }
   }
 }
@@ -317,18 +321,21 @@ export class ClaudeOutputParser {
 ## State Management Strategy
 
 ### Agent Framework State
+
 - **Storage**: Durable Object persistent storage
 - **Structure**: Message-based conversation history
 - **Synchronization**: Real-time WebSocket updates
 - **Persistence**: Automatic across browser sessions
 
 ### Claude Code Session State
+
 - **Storage**: Container filesystem
 - **Structure**: Session directories with workspace files
 - **Persistence**: Container hibernation/awakening
 - **Integration**: Session ID mapping between agent and Claude Code
 
 ### State Synchronization Flow
+
 1. **User Message** → Agent adds to message history
 2. **Claude Code Execution** → Updates container session state
 3. **Output Processing** → Parser converts to agent messages
@@ -338,9 +345,11 @@ export class ClaudeOutputParser {
 ## Implementation Phases
 
 ### Phase 1: Agent Framework Foundation (Week 1-2)
+
 **Objectives**: Set up basic agent framework integration with demo interface
 
 **Tasks**:
+
 - [ ] Install Cloudflare agents package in agent-worker
 - [ ] Create `ClaudeCodeAgent` class extending `AIChatAgent`
 - [ ] Implement basic Durable Object session management
@@ -349,14 +358,17 @@ export class ClaudeOutputParser {
 - [ ] Add demo routes to Hono app (`GET /demo`, `GET /demo/ws`)
 
 **Deliverables**:
+
 - Working `ClaudeCodeAgent` with basic WebSocket communication
 - Simple demo chat interface served by agent-worker
 - Basic session state management
 
 ### Phase 2: Container Integration (Week 2-3)
+
 **Objectives**: Integrate existing container infrastructure with agent framework
 
 **Tasks**:
+
 - [ ] Implement `ClaudeContainerBridge` class
 - [ ] Modify container interface to accept agent context
 - [ ] Create `ClaudeOutputParser` for CLI-to-message conversion
@@ -365,15 +377,18 @@ export class ClaudeOutputParser {
 - [ ] Enhance demo interface with real-time message display
 
 **Deliverables**:
+
 - Working container execution via agent framework
 - Streaming CLI output converted to agent messages
 - Error handling and recovery mechanisms
 - Functional demo interface with message streaming
 
 ### Phase 3: Demo Interface Enhancement (Week 3-4)
+
 **Objectives**: Create comprehensive demo interface with agent features
 
 **Tasks**:
+
 - [ ] Implement message type handling (progress, results, errors, file changes)
 - [ ] Add visual indicators (loading, progress bars, status)
 - [ ] Create agent configuration options (model selection, permissions)
@@ -382,15 +397,18 @@ export class ClaudeOutputParser {
 - [ ] Create tool usage visualization
 
 **Deliverables**:
+
 - Feature-complete demo interface
 - Real-time message streaming with different types
 - Agent configuration controls
 - Session management in demo
 
 ### Phase 4: Advanced Agent Features (Week 4-5)
+
 **Objectives**: Advanced session features and agent capabilities
 
 **Tasks**:
+
 - [ ] Implement `ClaudeSessionManager` for session coordination
 - [ ] Add session persistence and recovery
 - [ ] Implement conversation context passing
@@ -399,14 +417,17 @@ export class ClaudeOutputParser {
 - [ ] Create agent configuration system for future extensibility
 
 **Deliverables**:
+
 - Robust session management across container restarts
 - Conversation context preservation
 - Agent configuration foundation for future multi-agent system
 
 ### Phase 5: Testing and Documentation (Week 5-6)
+
 **Objectives**: Comprehensive testing and preparation for multi-agent expansion
 
 **Tasks**:
+
 - [ ] Write comprehensive test suite
 - [ ] Performance testing and optimization
 - [ ] Load testing with multiple concurrent sessions
@@ -415,6 +436,7 @@ export class ClaudeOutputParser {
 - [ ] Prepare integration guidelines for `/apps/web` expansion
 
 **Deliverables**:
+
 - Comprehensive test coverage
 - Performance benchmarks
 - Demo interface documentation
@@ -423,6 +445,7 @@ export class ClaudeOutputParser {
 ## Migration Strategy
 
 ### Current State Assessment
+
 - **REST API Endpoints**: `/claude-code` POST endpoint
 - **Session Management**: Basic filesystem-based approach
 - **Container Architecture**: Working Durable Object + Container setup
@@ -431,17 +454,20 @@ export class ClaudeOutputParser {
 ### Migration Approach
 
 #### Option 1: Parallel Implementation (Recommended)
+
 1. **Implement agent framework alongside existing REST API**
 2. **Add feature flag to switch between implementations**
 3. **Gradual migration of functionality**
 4. **Deprecate REST API after full feature parity**
 
 #### Option 2: Direct Replacement
+
 1. **Replace REST handlers with agent framework**
 2. **Migrate existing sessions to agent format**
 3. **Update web UI in single deployment**
 
 ### Migration Steps
+
 1. **Implement ClaudeCodeAgent with feature flag**
 2. **Add agent framework endpoints alongside REST**
 3. **Update web UI to support both modes**
@@ -456,6 +482,7 @@ export class ClaudeOutputParser {
 Instead of building the full multi-agent dashboard immediately, we'll start with a focused demo interface within the agent-worker itself:
 
 #### **Project Structure Update**
+
 ```
 apps/agent-worker/
 ├── src/
@@ -474,15 +501,17 @@ apps/agent-worker/
 ```
 
 #### **Demo Routes in Hono App**
+
 ```typescript
 // Add to apps/agent-worker/src/index.ts
 app
-  .get('/demo', handleDemo)           // Serve demo interface
-  .get('/demo/ws', handleAgentWS)     // WebSocket endpoint
+  .get('/demo', handleDemo) // Serve demo interface
+  .get('/demo/ws', handleAgentWS) // WebSocket endpoint
   .post('/claude-code', handleClaudeCode) // Existing REST API
 ```
 
 #### **Simple Demo Interface Features**
+
 1. **Single-Page Chat Interface**: Vanilla HTML/JS for simplicity
 2. **WebSocket Communication**: Direct connection to ClaudeCodeAgent
 3. **Message Type Display**: Progress, results, errors, file changes
@@ -490,6 +519,7 @@ app
 5. **Session Persistence**: Maintain chat history across refreshes
 
 ### **Benefits of This Approach**
+
 - **Self-Contained**: Everything runs within agent-worker
 - **Proof of Concept**: Validates ClaudeCodeAgent integration
 - **Development Tool**: Useful for testing and debugging
@@ -519,22 +549,24 @@ Web Dashboard
 ### **React Integration with Cloudflare Agents**
 
 #### **1. Core Integration Pattern**
+
 ```typescript
 // apps/web/src/hooks/use-claude-agent.tsx
-import { useAgent } from 'cloudflare-agents/react';
+import { useAgent } from 'cloudflare-agents/react'
 
 export function useClaudeAgent() {
   const agent = useAgent({
     agentId: 'claude-code-agent',
     // WebSocket connection to our ClaudeCodeAgent
-    endpoint: '/agent-ws'
-  });
-  
-  return agent;
+    endpoint: '/agent-ws',
+  })
+
+  return agent
 }
 ```
 
 #### **2. Chat Interface Components**
+
 ```typescript
 // apps/web/src/components/claude-chat.tsx
 import { useClaudeAgent } from '../hooks/use-claude-agent';
@@ -632,7 +664,7 @@ function ToolUsageDisplay({ tool, args, result }: ToolUseMessage) {
 // apps/web/src/components/agent-dashboard.tsx
 export function AgentDashboard() {
   const [activeAgent, setActiveAgent] = useState('claude-code');
-  
+
   return (
     <div className="flex h-screen">
       {/* Agent Sidebar */}
@@ -640,7 +672,7 @@ export function AgentDashboard() {
         <h2 className="font-bold mb-4">Available Agents</h2>
         <AgentList onSelectAgent={setActiveAgent} />
       </div>
-      
+
       {/* Active Agent Interface */}
       <div className="flex-1">
         {activeAgent === 'claude-code' && <ClaudeChat />}
@@ -658,7 +690,7 @@ export function AgentDashboard() {
 Web UI Component
     ↓ User Input
 useClaudeAgent Hook
-    ↓ WebSocket Message  
+    ↓ WebSocket Message
 agent-worker (WebSocket Handler)
     ↓ Message Processing
 ClaudeCodeAgent (Durable Object)
@@ -675,25 +707,29 @@ Real-time UI Updates
 ### **UI Migration Strategy**
 
 #### **Phase 1: Agent Integration Foundation**
+
 1. Install Cloudflare agents package in `/apps/web`
 2. Create agent hooks and basic components
 3. Implement WebSocket connection to ClaudeCodeAgent
 4. Basic chat interface with message display
 
 #### **Phase 2: Enhanced UI Components**
+
 1. Real-time progress indicators
-2. File change notifications  
+2. File change notifications
 3. Tool usage visualization
 4. Code diff displays
 5. Error handling UI
 
 #### **Phase 3: Multi-Agent Dashboard**
+
 1. Agent management sidebar
 2. Multiple agent support
 3. Agent switching capabilities
 4. Unified session management across agents
 
 #### **Phase 4: Advanced Features**
+
 1. Session history and management
 2. Agent configuration UI
 3. Performance monitoring dashboard
@@ -712,16 +748,19 @@ Real-time UI Updates
 Based on the research, our UI will leverage these proven patterns:
 
 #### **Streaming UI Components**
+
 - Use `streamUI` pattern for real-time component updates
 - Implement `createStreamableUI` for server-side component streaming
 - Support `useStreamableValue` for client-side streaming consumption
 
 #### **Real-time Message Handling**
+
 - Implement `useChat` pattern for conversation management
 - Use `readStreamableValue` for processing streamed responses
 - Support tool invocation display with confirmation patterns
 
 #### **Agent State Management**
+
 - Use `useUIState` for persistent conversation state
 - Implement `useActions` for server-side action invocation
 - Support session resumption with `resumeStream` capabilities
@@ -729,24 +768,28 @@ Based on the research, our UI will leverage these proven patterns:
 ## Technical Considerations
 
 ### Performance
+
 - **WebSocket Overhead**: Minimal compared to REST polling
 - **Memory Usage**: Agent framework state is lightweight
 - **Container Lifecycle**: Optimize hibernation/awakening cycles
 - **Concurrent Sessions**: Durable Objects provide excellent isolation
 
 ### Security
+
 - **Authentication**: Integrate with existing auth system
 - **Session Isolation**: Durable Objects provide strong isolation
 - **Container Security**: Existing security model preserved
 - **API Security**: WebSocket connections require authentication
 
 ### Scalability
+
 - **Edge Distribution**: Leverage Cloudflare's global network
 - **Auto-scaling**: Durable Objects scale automatically
 - **Resource Management**: Container resource limits and monitoring
 - **Load Balancing**: Handled by Cloudflare edge routing
 
 ### Error Handling
+
 - **Container Failures**: Automatic restart with session recovery
 - **Network Issues**: WebSocket reconnection with message buffering
 - **Parse Errors**: Graceful handling with fallback formatting
@@ -755,18 +798,21 @@ Based on the research, our UI will leverage these proven patterns:
 ## Success Metrics
 
 ### User Experience
+
 - **Response Time**: Sub-200ms for WebSocket message delivery
 - **Uptime**: >99.9% availability for agent sessions
 - **Session Recovery**: <5 second recovery time from container restart
 - **Real-time Updates**: <100ms latency for streaming responses
 
 ### Technical Metrics
+
 - **Memory Usage**: <50MB per active session
 - **CPU Usage**: <10% per active session
 - **Container Startup**: <2 seconds for cold start
 - **WebSocket Connections**: Support 1000+ concurrent connections
 
 ### Business Metrics
+
 - **User Engagement**: Increased session duration
 - **Error Reduction**: 50% reduction in user-reported issues
 - **Developer Experience**: Faster development cycles with better tooling

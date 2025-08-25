@@ -3,10 +3,10 @@ import { useWorkersLogger } from 'workers-tagged-logger'
 
 import { useNotFound, useOnError } from '@repo/hono-helpers'
 
-import { ClaudeCodeContainer } from './claude-container'
 import { ClaudeCodeAgent } from './agents/claude-code-agent'
+import { ClaudeCodeContainer } from './claude-container'
+import { handleAgentMessage, handleAgentWebSocket } from './handlers/claude-agent'
 import { handleClaudeCode } from './handlers/claude-code'
-import { handleAgentWebSocket, handleAgentMessage } from './handlers/claude-agent'
 import { handleDemo } from './handlers/demo'
 
 import type { App } from './context'
@@ -34,7 +34,8 @@ const app = new Hono<App>()
 
 	// Claude Code Agent Framework endpoints (new)
 	.get('/demo', handleDemo)
-	.get('/demo/ws', handleAgentWebSocket)
+	.get('/demo/:sessionId', handleDemo)
+	.get('/demo/ws/:sessionId', handleAgentWebSocket)
 	.post('/agent/message', handleAgentMessage)
 
 // Export the container and agent classes for Durable Objects

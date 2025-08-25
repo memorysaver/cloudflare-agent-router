@@ -60,7 +60,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/hono-helpers
       agents:
-        specifier: ^0.0.113
+        specifier: 0.0.113
         version: 0.0.113(@cloudflare/workers-types@4.20250813.0)(react@19.1.1)
       hono:
         specifier: 4.9.1

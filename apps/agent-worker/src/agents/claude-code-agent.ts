@@ -1,7 +1,8 @@
-import { Agent, type AgentContext } from 'agents'
-import type { Env } from '../context'
-import { ClaudeCodeContainer } from '../claude-container'
+import { Agent } from 'agents'
+
+import type { AgentContext } from 'agents'
 import type { ClaudeCodeOptions } from '../claude-container'
+import type { Env } from '../context'
 
 /**
  * Message types for structured communication
@@ -30,6 +31,7 @@ export interface AgentSessionState {
 		lastCommand: string
 		sessionFiles: string[]
 		activeTools: string[]
+		preferredModel?: string
 	}
 
 	// Container management
@@ -41,13 +43,18 @@ export interface AgentSessionState {
 
 /**
  * Claude Code Agent - Integrates Claude Code SDK with Cloudflare Agent Framework
- * 
+ *
  * This agent extends Agent to provide real-time WebSocket communication
  * while leveraging the existing ClaudeCodeContainer infrastructure.
  */
 export class ClaudeCodeAgent extends Agent<Env> {
 	private containerBridge: ClaudeContainerBridge
 	private outputParser: ClaudeOutputParser
+
+	// Type-safe state access
+	get typedState(): AgentSessionState {
+		return this.typedState as AgentSessionState
+	}
 
 	/**
 	 * Initial state for the Agent
@@ -61,12 +68,13 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			workspacePath: '/workspace',
 			lastCommand: '',
 			sessionFiles: [],
-			activeTools: []
+			activeTools: [],
+			preferredModel: 'groq/openai/gpt-oss-120b',
 		},
 		containerState: {
 			isActive: false,
-			lastHeartbeat: Date.now()
-		}
+			lastHeartbeat: Date.now(),
+		},
 	}
 
 	constructor(ctx: AgentContext, env: Env) {
@@ -81,18 +89,18 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	async onRequest(request: Request): Promise<Response> {
 		try {
 			const url = new URL(request.url)
-			
+
 			if (request.method === 'POST' && url.pathname.endsWith('/message')) {
 				// Handle message via HTTP
-				const { message } = await request.json()
+				const { message } = (await request.json()) as { message: string }
 				return await this.processMessageRequest(message)
 			}
-			
+
 			return new Response('Agent ready', { status: 200 })
 		} catch (error) {
 			console.error('ClaudeCodeAgent onRequest error:', error)
 			return new Response(`Error: ${error instanceof Error ? error.message : String(error)}`, {
-				status: 500
+				status: 500,
 			})
 		}
 	}
@@ -103,24 +111,26 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	async onMessage(connection: any, message: any): Promise<void> {
 		try {
 			console.log('Received WebSocket message:', message)
-			
+
 			// Parse message data
 			const data = typeof message.data === 'string' ? JSON.parse(message.data) : message.data
-			
+
 			if (data.type === 'user_message' && data.content) {
 				// Process the user message with WebSocket connection for real-time responses
 				await this.processMessage(data.content, connection)
 			}
 		} catch (error) {
 			console.error('ClaudeCodeAgent onMessage error:', error)
-			
+
 			// Send error back via WebSocket
 			if (connection && connection.send) {
-				connection.send(JSON.stringify({
-					type: 'error',
-					content: `Error: ${error instanceof Error ? error.message : String(error)}`,
-					timestamp: Date.now()
-				}))
+				connection.send(
+					JSON.stringify({
+						type: 'error',
+						content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+						timestamp: Date.now(),
+					})
+				)
 			}
 		}
 	}
@@ -131,9 +141,9 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	private async processMessageRequest(content: string): Promise<Response> {
 		// Update running state
 		this.setState({
-			...this.state,
+			...this.typedState,
 			isRunning: true,
-			lastActivity: Date.now()
+			lastActivity: Date.now(),
 		})
 
 		try {
@@ -141,27 +151,27 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			const executionStream = await this.containerBridge.execute(content, {
 				sessionId: this.getSessionId(),
 				workspacePath: this.getWorkspacePath(),
-				context: this.getConversationContext()
+				context: this.getConversationContext(),
+				model: this.getCurrentModel(),
 			})
 
 			// Create a streaming response
 			return new Response(executionStream, {
 				headers: {
 					'Content-Type': 'text/plain; charset=utf-8',
-					'Transfer-Encoding': 'chunked'
-				}
+					'Transfer-Encoding': 'chunked',
+				},
 			})
-
 		} catch (error) {
 			console.error('ClaudeCodeAgent processMessageRequest error:', error)
 			return new Response(`Error: ${error instanceof Error ? error.message : String(error)}`, {
-				status: 500
+				status: 500,
 			})
 		} finally {
 			this.setState({
-				...this.state,
+				...this.typedState,
 				isRunning: false,
-				lastActivity: Date.now()
+				lastActivity: Date.now(),
 			})
 		}
 	}
@@ -169,44 +179,76 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	/**
 	 * Process incoming user messages (for WebSocket calls)
 	 */
-	async processMessage(content: string): Promise<void> {
+	async processMessage(content: string, sessionId?: string, model?: string): Promise<void> {
 		console.log('Processing WebSocket message:', content)
-		
+
+		// Update session ID if provided
+		if (sessionId) {
+			this.setState({
+				...this.typedState,
+				claudeSession: {
+					...this.typedState.claudeSession,
+					id: sessionId,
+				},
+			})
+		}
+
+		// Store model preference if provided
+		if (model) {
+			this.setState({
+				...this.typedState,
+				claudeSession: {
+					...this.typedState.claudeSession,
+					preferredModel: model,
+				},
+			})
+		}
+
 		// Update running state
 		this.setState({
-			...this.state,
+			...this.typedState,
 			isRunning: true,
-			lastActivity: Date.now()
+			lastActivity: Date.now(),
 		})
 
 		try {
+			// Add user message to conversation history
+			const userMessage: AgentMessage = {
+				id: this.generateId(),
+				role: 'user',
+				content: content,
+				type: 'result',
+				timestamp: Date.now(),
+			}
+			this.addMessageToState(userMessage)
+
 			// Execute Claude Code via container
 			const executionStream = await this.containerBridge.execute(content, {
 				sessionId: this.getSessionId(),
 				workspacePath: this.getWorkspacePath(),
-				context: this.getConversationContext()
+				context: this.getConversationContext(),
+				model: this.getCurrentModel(),
 			})
 
 			// Process the streaming response
 			await this.processClaudeStream(executionStream)
-
 		} catch (error) {
 			console.error('ClaudeCodeAgent processMessage error:', error)
-			
+
 			// Store error message in state for WebSocket handler to retrieve
 			const errorMessage: AgentMessage = {
 				id: this.generateId(),
 				role: 'assistant',
 				content: `Error: ${error instanceof Error ? error.message : String(error)}`,
 				type: 'error',
-				timestamp: Date.now()
+				timestamp: Date.now(),
 			}
 			this.addMessageToState(errorMessage)
 		} finally {
 			this.setState({
-				...this.state,
+				...this.typedState,
 				isRunning: false,
-				lastActivity: Date.now()
+				lastActivity: Date.now(),
 			})
 		}
 	}
@@ -229,7 +271,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 				for (const message of messages) {
 					this.addMessageToState(message)
 					console.log('Parsed message:', message)
-					
+
 					// Messages are now stored in state and retrieved by the WebSocket handler
 				}
 			}
@@ -242,11 +284,11 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	 * Add message to agent state
 	 */
 	private addMessageToState(message: AgentMessage): void {
-		const currentMessages = this.state.messages || []
+		const currentMessages = this.typedState.messages || []
 		this.setState({
-			...this.state,
+			...this.typedState,
 			messages: [...currentMessages, message],
-			lastActivity: Date.now()
+			lastActivity: Date.now(),
 		})
 	}
 
@@ -254,16 +296,25 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	 * Get current agent state (for WebSocket handler)
 	 */
 	async getState(): Promise<AgentSessionState> {
-		return this.state
+		return this.typedState
 	}
 
 	/**
 	 * Get conversation context for Claude Code
 	 */
 	private getConversationContext(): string {
-		// For now, return empty context since we're using base Agent
-		// In a full implementation, you'd maintain message history in agent state
-		return ''
+		const messages = this.typedState.messages || []
+		if (messages.length === 0) {
+			return ''
+		}
+
+		// Build conversation history from recent messages
+		const context = messages
+			.slice(-10) // Get last 10 messages to avoid token limits
+			.map((msg: AgentMessage) => `${msg.role}: ${msg.content}`)
+			.join('\n')
+
+		return context
 	}
 
 	/**
@@ -277,14 +328,22 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	 * Get current session ID
 	 */
 	private getSessionId(): string {
-		return this.state.claudeSession?.id || `session_${Date.now()}`
+		return this.typedState.claudeSession?.id || `session_${Date.now()}`
 	}
 
 	/**
 	 * Get workspace path for session
 	 */
 	private getWorkspacePath(): string {
-		return this.state.claudeSession?.workspacePath || '/workspace'
+		const sessionId = this.getSessionId()
+		return `/workspace/session-${sessionId}`
+	}
+
+	/**
+	 * Get current preferred model for session
+	 */
+	private getCurrentModel(): string {
+		return this.typedState.claudeSession?.preferredModel || 'groq/openai/gpt-oss-120b'
 	}
 
 	/**
@@ -316,33 +375,44 @@ export class ClaudeContainerBridge {
 			sessionId: string
 			workspacePath: string
 			context: string
+			model?: string
 		}
 	): Promise<ReadableStream> {
+		// Check if we have existing conversation context (indicating session continuation)
+		const hasContext = options.context && options.context.trim().length > 0
+
 		// Prepare Claude Code execution options
 		const claudeOptions: ClaudeCodeOptions = {
 			prompt,
+			model: options.model || 'groq/openai/gpt-oss-120b', // Use provided model or default
 			sessionId: options.sessionId,
+			continueSession: Boolean(hasContext), // Continue session if we have context
+			resumeSessionId: hasContext ? options.sessionId : undefined,
 			cwd: options.workspacePath,
 			stream: true,
 			verbose: false,
 			maxTurns: 10,
 			permissionMode: 'acceptEdits',
 			// Include conversation context as system prompt appendix
-			appendSystemPrompt: `Previous conversation context:\n${options.context}`,
+			appendSystemPrompt: hasContext
+				? `Previous conversation context:\n${options.context}`
+				: undefined,
 		}
 
 		// Prepare environment variables
 		const envVars: Record<string, string> = {
 			ANTHROPIC_AUTH_TOKEN: this.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
-			ANTHROPIC_BASE_URL: this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
+			ANTHROPIC_BASE_URL:
+				this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
 		}
 
 		if (this.env.ANTHROPIC_API_KEY) {
 			envVars.ANTHROPIC_API_KEY = this.env.ANTHROPIC_API_KEY
 		}
 
-		// Get container instance
-		const id = this.env.CLAUDE_CONTAINER.idFromName('claude-execution')
+		// Get session-specific container instance
+		const containerId = `claude-session-${options.sessionId}`
+		const id = this.env.CLAUDE_CONTAINER.idFromName(containerId)
 		const container = this.env.CLAUDE_CONTAINER.get(id)
 
 		// Execute and return stream
@@ -384,6 +454,7 @@ export class ClaudeOutputParser {
 	 */
 	private parseLine(line: string): AgentMessage | null {
 		// Remove ANSI escape codes
+		// eslint-disable-next-line no-control-regex
 		const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '')
 
 		// Skip empty lines
@@ -393,17 +464,39 @@ export class ClaudeOutputParser {
 		try {
 			if (cleanLine.startsWith('{') && cleanLine.endsWith('}')) {
 				const parsed = JSON.parse(cleanLine)
-				if (parsed.type && parsed.result !== undefined) {
+
+				// Handle different Claude Code response formats
+				if (parsed.type === 'result' && parsed.result !== undefined) {
+					// Format: {"type":"result","result":"content",...}
 					return {
 						id: this.generateId(),
 						role: 'assistant',
 						content: parsed.result,
-						type: parsed.type === 'result' ? 'result' : parsed.type,
-						timestamp: Date.now()
+						type: 'result',
+						timestamp: Date.now(),
+					}
+				} else if (parsed.type === 'assistant' && parsed.content) {
+					// Format: {"type":"assistant","content":"content"}
+					return {
+						id: this.generateId(),
+						role: 'assistant',
+						content: parsed.content,
+						type: 'result',
+						timestamp: Date.now(),
+					}
+				} else if (parsed.type === 'error' && parsed.message) {
+					// Format: {"type":"error","message":"error text"}
+					return {
+						id: this.generateId(),
+						role: 'assistant',
+						content: parsed.message,
+						type: 'error',
+						timestamp: Date.now(),
 					}
 				}
+				// If it's JSON but doesn't match expected formats, skip it
 			}
-		} catch (error) {
+		} catch {
 			// Not JSON, continue with text parsing
 		}
 
@@ -414,7 +507,7 @@ export class ClaudeOutputParser {
 				role: 'assistant',
 				content: cleanLine.substring(2).trim(),
 				type: 'tool_use',
-				timestamp: Date.now()
+				timestamp: Date.now(),
 			}
 		} else if (cleanLine.startsWith('❌ ')) {
 			return {
@@ -422,7 +515,7 @@ export class ClaudeOutputParser {
 				role: 'assistant',
 				content: cleanLine.substring(2).trim(),
 				type: 'error',
-				timestamp: Date.now()
+				timestamp: Date.now(),
 			}
 		} else if (cleanLine.includes('file:')) {
 			return {
@@ -430,7 +523,7 @@ export class ClaudeOutputParser {
 				role: 'assistant',
 				content: cleanLine,
 				type: 'file_change',
-				timestamp: Date.now()
+				timestamp: Date.now(),
 			}
 		} else {
 			return {
@@ -438,7 +531,7 @@ export class ClaudeOutputParser {
 				role: 'assistant',
 				content: cleanLine,
 				type: 'result',
-				timestamp: Date.now()
+				timestamp: Date.now(),
 			}
 		}
 	}
