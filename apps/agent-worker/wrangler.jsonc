@@ -21,6 +21,10 @@
 			{
 				"name": "CLAUDE_CONTAINER",
 				"class_name": "ClaudeCodeContainer"
+			},
+			{
+				"name": "CLAUDE_CODE_AGENT",
+				"class_name": "ClaudeCodeAgent"
 			}
 		]
 	},
@@ -28,6 +32,10 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["ClaudeCodeContainer"]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["ClaudeCodeAgent"]
 		}
 	],
 	"vars": {
