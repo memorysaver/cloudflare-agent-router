@@ -85,7 +85,7 @@ export function handleAgentWebSocket(c: Context<App>) {
  */
 export async function handleAgentMessage(c: Context<App>): Promise<Response> {
 	try {
-		const { message } = await c.req.json()
+		const { message, sessionId } = await c.req.json()
 
 		if (!message) {
 			return c.json(
@@ -96,12 +96,12 @@ export async function handleAgentMessage(c: Context<App>): Promise<Response> {
 			)
 		}
 
-		// Get agent instance
-		const agentId = c.env.CLAUDE_CODE_AGENT.idFromName('claude-agent-session')
-		const agent = c.env.CLAUDE_CODE_AGENT.get(agentId)
+		// Get session-specific agent instance or default
+		const agentId = sessionId ? `session-${sessionId}` : 'claude-agent-default'
+		const agent = c.env.CLAUDE_CODE_AGENT.get(c.env.CLAUDE_CODE_AGENT.idFromName(agentId))
 
-		// Process message
-		await agent.processMessage(message)
+		// Process message with optional session ID
+		await agent.processMessage(message, sessionId)
 
 		return c.json({
 			status: 'Message processed',

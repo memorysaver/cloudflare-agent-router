@@ -98,10 +98,8 @@ export class ClaudeCodeContainer extends Container {
 		console.log(`  - ANTHROPIC_BASE_URL: ${this.envVars.ANTHROPIC_BASE_URL}`)
 		console.log(`  - ANTHROPIC_AUTH_TOKEN: ${this.envVars.ANTHROPIC_AUTH_TOKEN}`)
 
-		// Start the container (HTTP server will start automatically)
-		await this.start()
-
 		// Create a POST request to the container's HTTP server with actual request data
+		// Note: containerFetch() automatically starts container if needed and renews activity timeout
 		const request = new Request(`http://localhost:${this.defaultPort}/`, {
 			method: 'POST',
 			headers: {

@@ -127,13 +127,9 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			allowedTools: requestBody.allowedTools,
 			disallowedTools: requestBody.disallowedTools,
 
-			// Session Management - use resumeSessionId for specific sessions, continueSession for most recent
+			// Session Management - simplified for shared workspace architecture
 			sessionId: requestBody.sessionId,
-			...(requestBody.sessionId && { resumeSessionId: requestBody.sessionId }),
-			...(requestBody.resumeSessionId &&
-				!requestBody.sessionId && { resumeSessionId: requestBody.resumeSessionId }),
-			// Only use continueSession when no specific sessionId is provided - don't pass it at all when using resumeSessionId
-			...(requestBody.sessionId ? {} : { continueSession: requestBody.continueSession || false }),
+			continueSession: requestBody.sessionId ? true : (requestBody.continueSession || false),
 
 			// Permission & Security
 			permissionMode: requestBody.permissionMode || 'acceptEdits',
@@ -171,9 +167,12 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 
 		// Skip API key validation since we're using auto-detect with LiteLLM router
 
-		// Get container instance
-		const id = c.env.CLAUDE_CONTAINER.idFromName('claude-execution')
+		// Get session-specific container instance
+		const containerId = requestBody.sessionId ? `claude-session-${requestBody.sessionId}` : 'claude-execution'
+		const id = c.env.CLAUDE_CONTAINER.idFromName(containerId)
 		const container = c.env.CLAUDE_CONTAINER.get(id)
+
+		console.log(`🤖 Using container: ${containerId}`)
 
 		// Execute Claude Code and return the streaming response
 		console.log(`🤖 Executing Claude Code in container...`)

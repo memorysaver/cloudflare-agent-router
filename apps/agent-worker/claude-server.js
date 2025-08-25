@@ -21,68 +21,6 @@ try {
 
 const app = new Hono()
 
-// Session folder management
-function ensureSessionFolder(sessionId, isTemp = false) {
-	const sessionPath = path.join('/sessions', sessionId)
-	const workspacePath = path.join(sessionPath, 'workspace')
-
-	try {
-		// Create session directory structure
-		fs.mkdirSync(sessionPath, { recursive: true })
-		fs.mkdirSync(workspacePath, { recursive: true })
-
-		console.log(`📁 Created ${isTemp ? 'temp ' : ''}session folder: ${sessionPath}`)
-		return { sessionPath, workspacePath, sessionId }
-	} catch (error) {
-		console.error(`❌ Failed to create session folder ${sessionPath}:`, error)
-		throw error
-	}
-}
-
-// Generate temp sandbox ID for new sessions
-function generateSandboxId() {
-	const timestamp = Date.now()
-	const random = Math.random().toString(36).substr(2, 9)
-	return `temp_${timestamp}_${random}`
-}
-
-// Rename session folder from sandbox ID to actual session ID
-function renameSessionFolder(fromSandboxId, toSessionId) {
-	const fromPath = path.join('/sessions', fromSandboxId)
-	const toPath = path.join('/sessions', toSessionId)
-
-	try {
-		// Check if source folder exists
-		if (!fs.existsSync(fromPath)) {
-			console.warn(`⚠️ Source folder not found for rename: ${fromPath}`)
-			return false
-		}
-
-		// Check if target folder already exists
-		if (fs.existsSync(toPath)) {
-			console.warn(`⚠️ Target folder already exists: ${toPath}`)
-			return false
-		}
-
-		// Perform atomic rename
-		fs.renameSync(fromPath, toPath)
-		console.log(`✅ Renamed session folder: ${fromSandboxId} → ${toSessionId}`)
-		return true
-	} catch (error) {
-		console.error(`❌ Failed to rename session folder ${fromSandboxId} → ${toSessionId}:`, error)
-
-		// Fallback: Create symlink if rename fails
-		try {
-			fs.symlinkSync(fromPath, toPath, 'dir')
-			console.log(`🔗 Created symlink fallback: ${fromSandboxId} → ${toSessionId}`)
-			return true
-		} catch (symlinkError) {
-			console.error(`❌ Symlink fallback failed:`, symlinkError)
-			return false
-		}
-	}
-}
-
 // Health check endpoint
 app.get('/', (c) => {
 	return c.json({
@@ -188,8 +126,10 @@ app.post('/', async (c) => {
 			permissionMode: permissionMode || 'acceptEdits',
 			cwd: sessionWorkspacePath,
 			pathToClaudeCodeExecutable: pathToClaudeCodeExecutable || undefined, // undefined = SDK manages
-			// Simplified session management - always try to continue in shared workspace
+			// Session management - pass sessionId to SDK for continuity
+			sessionId: sessionId,
 			continueSession: continueSession !== false, // Default to true unless explicitly false
+			resumeSessionId: resumeSessionId,
 		}
 
 		// Add optional parameters directly from request (no env var fallbacks)

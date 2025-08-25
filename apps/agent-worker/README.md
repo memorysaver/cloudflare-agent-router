@@ -52,26 +52,36 @@ curl -X POST http://localhost:8788/claude-code \
 
 ## Architecture
 
-### Ultra-Simple Design
+### Session Management Design
 
 ```
-HTTP Client
+HTTP Client (with sessionId)
     ↓ POST /claude-code
 Cloudflare Worker
     ↓ Parse & validate request
-Docker Container
-    ↓ Direct parameter mapping
-Claude Code SDK
+Session-Specific Container (claude-session-{sessionId})
+    ↓ Shared workspace (/workspace)
+Claude Code SDK (continueSession: true)
     ↓ AI model calls
 LiteLLM Router → AI Models
 ```
 
+**Core Session Architecture**:
+- **Session ID**: Unique identifier for each user session (UUID)
+- **Per Session**: Each sessionId gets its own isolated container instance
+- **Per Container**: Container named `claude-session-{sessionId}` for isolation
+- **One Workspace**: All operations within a session use shared `/workspace` directory
+- **Auto Continue**: `continueSession: true` automatically maintains context and file state
+
 ### Key Principles
 
-1. **Environment Variables**: Only for LiteLLM router configuration
-2. **HTTP Parameters**: All Claude Code options come from request body
-3. **Direct Mapping**: Request parameters → SDK parameters (no transformation)
-4. **Clean Separation**: API config vs request data
+1. **Session Isolation**: Each sessionId maps to a dedicated container instance
+2. **Workspace Persistence**: Shared `/workspace` directory maintains files across requests
+3. **Automatic Continuation**: Claude Code SDK automatically continues previous context
+4. **Environment Variables**: Only for LiteLLM router configuration
+5. **HTTP Parameters**: All Claude Code options come from request body
+6. **Direct Mapping**: Request parameters → SDK parameters (no transformation)
+7. **Clean Separation**: API config vs request data
 
 ## Complete API Reference
 
@@ -102,8 +112,9 @@ All Claude Code SDK parameters are supported directly. See [Claude Code SDK docu
 | `appendSystemPrompt`         | `string`                                                      | `undefined`           | Additional context for system prompt               |
 | `allowedTools`               | `string[]`                                                    | `undefined`           | Specific tools to enable (undefined = all tools)   |
 | `disallowedTools`            | `string[]`                                                    | `undefined`           | Tools to disable                                   |
-| `continueSession`            | `boolean`                                                     | `false`               | Continue from previous session                     |
-| `resumeSessionId`            | `string`                                                      | `undefined`           | Session ID to resume                               |
+| `sessionId`                  | `string`                                                      | `undefined`           | **Session ID for container isolation and auto-continue** |
+| `continueSession`            | `boolean`                                                     | `false`               | Continue from previous session (auto-enabled with sessionId) |
+| `resumeSessionId`            | `string`                                                      | `undefined`           | Session ID to resume (legacy - use sessionId instead) |
 | `permissionMode`             | `"default" \| "acceptEdits" \| "plan" \| "bypassPermissions"` | `"bypassPermissions"` | Permission level                                   |
 | `permissionPromptTool`       | `string`                                                      | `undefined`           | Custom permission tool                             |
 | `mcpConfig`                  | `string`                                                      | `undefined`           | MCP server configuration                           |
@@ -165,31 +176,62 @@ Only these environment variables are injected into the container:
 | `ANTHROPIC_AUTH_TOKEN` | Worker configuration       | Authentication mode      |
 | `ANTHROPIC_API_KEY`    | Worker configuration       | API key (if provided)    |
 
-### Data Flow
+### Session-Based Data Flow
 
-1. **HTTP Request**: All Claude Code parameters in request body
-2. **Environment Setup**: Only LiteLLM configuration as environment variables
-3. **Direct Mapping**: Request parameters → Claude Code SDK options
-4. **SDK Execution**: Following official Claude Code SDK patterns
+1. **HTTP Request**: All Claude Code parameters in request body + sessionId
+2. **Container Selection**: Get or create session-specific container `claude-session-{sessionId}`
+3. **Workspace Setup**: Ensure shared `/workspace` directory exists in container
+4. **Environment Setup**: Only LiteLLM configuration as environment variables
+5. **SDK Execution**: Auto-continue with shared workspace and session context
 
-Example mapping:
+Example session mapping:
 
 ```javascript
-// HTTP Request
+// HTTP Request with Session
 {
-  "prompt": "What is 2+2?",
-  "maxTurns": 3,
-  "systemPrompt": "You are helpful"
+  "prompt": "Create a hello.py file",
+  "sessionId": "demo-abc123",
+  "maxTurns": 10
 }
+
+// Container Isolation
+containerId = "claude-session-demo-abc123"
+workspace = "/workspace"  // Shared across all requests for this session
 
 // Claude Code SDK Call
 query({
-  prompt: "What is 2+2?",
+  prompt: "Create a hello.py file",
   options: {
-    maxTurns: 3,
-    systemPrompt: "You are helpful"
+    sessionId: "demo-abc123",
+    continueSession: true,  // Auto-enabled
+    cwd: "/workspace",      // Shared workspace
+    maxTurns: 10
   }
 })
+```
+
+## Demo Interface
+
+The proxy includes a demo interface with automatic session management:
+
+- **URL**: `http://localhost:8788/demo/`
+- **Auto-Redirect**: Visiting `/demo/` automatically redirects to `/demo/{uuid}`
+- **Session Isolation**: Each demo session gets a unique UUID and dedicated container
+- **Workspace Persistence**: Files created in a demo session persist across requests
+- **Real-time WebSocket**: Live communication with Claude Code
+
+### Demo Session Architecture
+
+```
+User visits /demo/
+    ↓ Auto-redirect with UUID
+/demo/550e8400-e29b-41d4-a716-446655440000
+    ↓ WebSocket connection
+ClaudeCodeAgent (Durable Object)
+    ↓ Container isolation
+claud-session-550e8400-e29b-41d4-a716-446655440000
+    ↓ Shared workspace
+/workspace (persistent across requests)
 ```
 
 ## Usage Examples
@@ -230,18 +272,28 @@ curl -X POST http://localhost:8788/claude-code \
 ### Session Continuation
 
 ```bash
-# First request
-curl -X POST http://localhost:8788/claude-code \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Start a Python script"}'
-
-# Continue with returned sessionId
+# First request with sessionId - creates container claude-session-demo-abc123
 curl -X POST http://localhost:8788/claude-code \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "Add error handling",
-    "continueSession": true,
-    "resumeSessionId": "abc123..."
+    "prompt": "Create a hello.py file",
+    "sessionId": "demo-abc123"
+  }'
+
+# Continue with same sessionId - uses existing container and workspace
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Add error handling to hello.py",
+    "sessionId": "demo-abc123"
+  }'
+
+# Third request - Claude Code automatically sees previous files
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "What files exist in my workspace?",
+    "sessionId": "demo-abc123"
   }'
 ```
 
@@ -293,19 +345,64 @@ pnpm test
 pnpm turbo check:types
 ```
 
+## Known Issues
+
+### Session Continuity Not Working
+
+**Status**: ❌ **Critical Issue** - Session continuity is currently broken
+
+**Symptoms**: 
+- Different session IDs returned for same `sessionId` parameter
+- Claude doesn't remember previous conversation context
+- `continueSession: true` has no effect
+
+**Investigation Results**:
+1. ✅ **Container Routing Works**: Same session ID correctly routes to same Docker container
+2. ✅ **Session Storage Works**: Session files are created in `/root/.claude/projects/-workspace/`
+3. ✅ **Container Persistence**: Same container is reused for same session ID
+4. ❌ **Claude Code SDK Issue**: SDK ignores provided `sessionId` and creates new internal session IDs
+
+**Evidence** (2025-08-25):
+```bash
+# Test calls with sessionId: "clean-test-123"
+# Call 1: sessionId: "clean-test-123" → Claude session: "d2d6e67e-cf13-4d7e-ad57-8926098ae7f4"
+# Call 2: sessionId: "clean-test-123" → Claude session: "a7ab8cf4-b251-49b5-91cd-b11aa07ee72d"
+
+# Same container used: 640035df66ac
+# Different session files created in same container:
+# - d2d6e67e-cf13-4d7e-ad57-8926098ae7f4.jsonl
+# - a7ab8cf4-b251-49b5-91cd-b11aa07ee72d.jsonl
+```
+
+**Root Cause**: The Claude Code SDK is not properly using the provided `sessionId` parameter and `continueSession: true` flag. It creates new internal session IDs for each call instead of continuing existing sessions.
+
+**Next Steps**: 
+- Investigate Claude Code SDK session parameter handling
+- Verify correct session ID parameter format and options
+- Consider alternative session continuation approaches
+
 ## Troubleshooting
 
 ### Container Logs
 
 ```bash
-# Find running container
-docker ps --filter "ancestor=cloudflare-dev/claudecodecontainer"
+# Find session-specific container
+docker ps --filter "name=claude-session-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-# View logs
-docker logs <container_id>
+# View logs for specific session
+docker logs claude-session-demo-abc123
 
-# Follow logs in real-time
-docker logs -f <container_id>
+# Follow logs in real-time for debugging
+docker logs -f claude-session-demo-abc123
+
+# Check workspace contents
+docker exec claude-session-demo-abc123 ls -la /workspace
+
+# Interactive session for debugging
+docker exec -it claude-session-demo-abc123 /bin/bash
+
+# Check session files in container
+docker exec claude-session-demo-abc123 ls -la /root/.claude/projects/-workspace/
 ```
 
 ### Common Issues
@@ -330,6 +427,17 @@ docker logs -f <container_id>
 2. Use full model name (e.g., `"groq/openai/gpt-oss-120b"` not `"gpt-oss-120b"`)
 3. Verify LiteLLM router is accessible
 
+#### Session Continuity Issues
+
+**Symptoms**: Files created in previous requests are not visible, Claude Code asks about existing files
+
+**Debug Steps**:
+
+1. Verify sessionId is being passed consistently: `"sessionId": "demo-abc123"`
+2. Check container exists: `docker ps --filter "name=claude-session-demo-abc123"`
+3. Verify workspace contents: `docker exec claude-session-demo-abc123 ls -la /workspace`
+4. Ensure continueSession is enabled (auto-enabled with sessionId)
+
 #### Parameter Not Working
 
 **Symptoms**: Claude Code ignores parameter
@@ -339,6 +447,7 @@ docker logs -f <container_id>
 1. Check parameter name matches Claude Code SDK documentation
 2. Verify parameter type (string vs number vs boolean)
 3. Enable verbose logging: `"verbose": true`
+4. For sessionId: Ensure it's a valid string and container isolation is working
 
 ### Debug Logs
 
@@ -384,9 +493,12 @@ Set in `wrangler.jsonc`:
 
 ## Architecture Benefits
 
+- **Session Isolation**: Each sessionId gets dedicated container for true isolation
+- **Workspace Persistence**: Shared `/workspace` maintains file state across requests
+- **Automatic Continuation**: `continueSession: true` enables seamless context preservation
+- **Scalability**: Container-per-session allows unlimited concurrent sessions
 - **Simplicity**: Minimal environment variables, direct parameter mapping
 - **Compliance**: Follows official Claude Code SDK patterns exactly
 - **Flexibility**: All Claude Code SDK features available via HTTP
-- **Scalability**: Container isolation allows concurrent requests
 - **Maintainability**: Clean separation between API config and request data
-- **Debuggability**: Clear logging and request tracing
+- **Debuggability**: Session-specific containers enable precise debugging

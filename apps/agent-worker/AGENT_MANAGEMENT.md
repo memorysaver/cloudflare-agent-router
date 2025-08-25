@@ -85,8 +85,6 @@ async processMessage(content: string, sessionId?: string, model?: string): Promi
     // 3. Execute via container bridge
     const executionStream = await this.containerBridge.execute(content, {
         sessionId: this.getSessionId(),
-        workspacePath: this.getWorkspacePath(),
-        context: this.getConversationContext(),
         model: this.getCurrentModel()
     });
 
@@ -102,23 +100,20 @@ async processMessage(content: string, sessionId?: string, model?: string): Promi
 ```typescript
 async execute(prompt: string, options: {
     sessionId: string,
-    workspacePath: string,
-    context: string,
     model?: string
 }): Promise<ReadableStream> {
     // 1. Prepare Claude Code execution options
     const claudeOptions: ClaudeCodeOptions = {
         prompt,
         model: options.model || 'groq/openai/gpt-oss-120b',
-        sessionId: options.sessionId,
-        continueSession: Boolean(hasContext),
-        resumeSessionId: hasContext ? options.sessionId : undefined,
-        cwd: options.workspacePath,
+        sessionId: options.sessionId, // Pass sessionId to Claude Code SDK
+        continueSession: true,        // Always try to continue
+        cwd: '/workspace',           // Shared workspace
         stream: true,
         verbose: false,
         maxTurns: 10,
         permissionMode: 'acceptEdits',
-        appendSystemPrompt: hasContext ? `Previous conversation context:\n${options.context}` : undefined,
+        systemPrompt: '',            // Empty - let Claude Code use default
     };
 
     // 2. Get session-specific container instance
@@ -174,26 +169,22 @@ app.post('/', async (c) => {
   const requestBody = await c.req.json()
   const model = requestBody.model || process.env.ANTHROPIC_MODEL || 'groq/openai/gpt-oss-120b'
 
-  // 2. Session management with temp sandbox support
-  let sessionWorkspacePath = cwd || process.cwd()
-  if (sessionId) {
-    const { workspacePath } = ensureSessionFolder(sessionId, false)
-    sessionWorkspacePath = workspacePath
-  } else {
-    const sandboxId = generateSandboxId()
-    const { workspacePath } = ensureSessionFolder(sandboxId, true)
-    sessionWorkspacePath = workspacePath
-  }
+  // 2. Simplified session management - shared workspace
+  let sessionWorkspacePath = cwd || '/workspace'
+  console.log(`📁 Using shared workspace: ${sessionWorkspacePath}`)
+  
+  // Ensure shared workspace directory exists
+  fs.mkdirSync(sessionWorkspacePath, { recursive: true })
 
   // 3. Configure Claude Code SDK options
   const options = {
-    systemPrompt: systemPrompt || `You are a helpful assistant. [Request ID: ${requestId}]`,
+    systemPrompt: systemPrompt || '',  // Empty - let Claude Code use default
     maxTurns: maxTurns,
     allowedTools: allowedTools || undefined,
     permissionMode: permissionMode || 'acceptEdits',
     cwd: sessionWorkspacePath,
-    ...(sessionId && { resumeSessionId: sessionId }),
-    ...(sessionId ? {} : { continueSession: continueSession || false }),
+    ...(sessionId && { sessionId: sessionId }),
+    continueSession: continueSession !== false, // Default to true unless explicitly false
   }
 
   // 4. Execute Claude Code SDK with streaming
@@ -232,11 +223,13 @@ router_settings:
 
 ## Session Management Strategy
 
-### Dual-Layer State Architecture
+### Simplified Session Architecture
 
-The system implements a sophisticated dual-layer session management strategy:
+The system implements a streamlined session management strategy:
 
-#### Layer 1: Agent Framework State (Durable Object)
+**Core Concept**: Session ID → Container Isolation → Shared Workspace → Auto-Continue
+
+#### Agent Framework State (Durable Object)
 
 **Storage**: Cloudflare Durable Object persistent storage
 **Scope**: WebSocket connections, conversation history, user preferences
@@ -252,11 +245,11 @@ interface AgentSessionState {
   // Claude Code specific state
   claudeSession: {
     id: string
-    workspacePath: string
+    workspacePath: string        // Always '/workspace'
     lastCommand: string
     sessionFiles: string[]
     activeTools: string[]
-    preferredModel?: string // Model selection persistence
+    preferredModel?: string      // Model selection persistence
   }
 
   // Container management
@@ -280,51 +273,49 @@ get typedState(): AgentSessionState {
     return this.state as AgentSessionState;
 }
 
-// Session-specific workspace path
+// Session workspace path - shared workspace within container
 private getWorkspacePath(): string {
-    const sessionId = this.getSessionId();
-    return `/workspace/session-${sessionId}`;
+    return '/workspace';
 }
 ```
 
-#### Layer 2: Container File System State
+#### Container Isolation Architecture
 
-**Storage**: Container filesystem with session directories
+**Storage**: Container-level isolation with shared workspace
 **Scope**: Code files, workspace state, execution context
-**Location**: `claude-server.js` session management
+**Location**: Session-specific containers
 
-**Session Directory Structure**:
+**Container Architecture**:
 
 ```
-/sessions/
-├── session_1234567890/
-│   └── workspace/
-│       ├── src/
-│       ├── package.json
-│       └── ... (user files)
-├── temp_1234567891_abc123def/  # Temporary sandbox
-│   └── workspace/
-└── session_1234567892/
-    └── workspace/
+Session: demo-abc123
+↓
+Container: claude-session-demo-abc123
+↓
+Workspace: /workspace (shared across all requests)
+├── src/
+├── package.json
+└── ... (user files)
 ```
 
-**Session Lifecycle Management**:
+**Simplified Session Lifecycle**:
 
-```javascript
-// 1. New session: Create temporary sandbox
-const sandboxId = generateSandboxId() // temp_1234567891_abc123def
-const { workspacePath } = ensureSessionFolder(sandboxId, true)
+```typescript
+// 1. Session request with sessionId
+const sessionId = "demo-abc123"
 
-// 2. SDK execution captures actual session ID
-for await (const message of query(queryParams)) {
-  if (message.type === 'system' && message.subtype === 'init') {
-    capturedSessionId = message.session_id // session_1234567892
-  }
+// 2. Get or create session-specific container
+const containerId = `claude-session-${sessionId}`
+const container = env.CLAUDE_CONTAINER.get(env.CLAUDE_CONTAINER.idFromName(containerId))
+
+// 3. Execute with shared workspace and auto-continue
+const claudeOptions = {
+  sessionId: sessionId,
+  continueSession: true,  // Always enabled for sessions
+  cwd: '/workspace',      // Shared workspace
 }
 
-// 3. Rename temp sandbox to permanent session folder
-const renameSuccess = renameSessionFolder(sandboxId, capturedSessionId)
-// temp_1234567891_abc123def → session_1234567892
+// No renaming or temp folders needed - container persists for entire session
 ```
 
 ### State Synchronization Flow
@@ -570,7 +561,7 @@ export class ClaudeContainerBridge {
 **Container Instance Strategy**:
 
 ```typescript
-// Session-specific container instances
+// Session-specific container instances with shared workspace
 const containerId = `claude-session-${options.sessionId}`
 const id = this.env.CLAUDE_CONTAINER.idFromName(containerId)
 const container = this.env.CLAUDE_CONTAINER.get(id)
@@ -578,10 +569,12 @@ const container = this.env.CLAUDE_CONTAINER.get(id)
 
 **Benefits**:
 
-- **Session Isolation**: Each session gets dedicated container instance
-- **State Persistence**: Container hibernation preserves workspace state
+- **True Session Isolation**: Each sessionId gets dedicated container instance
+- **Shared Workspace Persistence**: Container hibernation preserves `/workspace` state
+- **Automatic Continuation**: `continueSession: true` enables seamless context preservation
 - **Resource Efficiency**: Automatic container hibernation when idle
 - **Scalability**: Durable Objects provide automatic scaling
+- **Simple Architecture**: No complex session folder management
 
 ### Environment Variable Injection
 
@@ -614,14 +607,13 @@ const claudeOptions: ClaudeCodeOptions = {
   prompt, // User input
   model: options.model || 'groq/openai/gpt-oss-120b', // Model selection
   sessionId: options.sessionId, // Session management
-  continueSession: Boolean(hasContext), // Context continuation
-  resumeSessionId: hasContext ? options.sessionId : undefined,
-  cwd: options.workspacePath, // Workspace isolation
+  continueSession: true, // Always enabled for sessions
+  cwd: '/workspace', // Shared workspace within container
   stream: true, // Real-time streaming
   verbose: false, // Production logging
   maxTurns: 10, // Conversation limits
   permissionMode: 'acceptEdits', // Security policy
-  appendSystemPrompt: hasContext ? `Previous conversation context:\n${options.context}` : undefined,
+  systemPrompt: '', // Empty - let Claude Code use default
 }
 ```
 

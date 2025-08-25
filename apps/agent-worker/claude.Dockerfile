@@ -16,6 +16,11 @@ RUN npm init -y
 # Install Claude Code SDK and Hono with verbose logging
 RUN npm install --verbose @anthropic-ai/claude-code hono @hono/node-server
 
+# Create ~/.claude directory for Claude Code SDK session storage
+RUN mkdir -p ~/.claude/projects && \
+    chmod 755 ~/.claude && \
+    chmod 755 ~/.claude/projects
+
 # Create the HTTP server that uses Claude Code SDK
 COPY claude-server.js ./claude-server.js
 COPY debug-server.js ./debug-server.js
