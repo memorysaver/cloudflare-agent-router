@@ -17,6 +17,7 @@
 	"dependencies": {
 		"@cloudflare/containers": "0.0.25",
 		"@repo/hono-helpers": "workspace:*",
+		"agents": "^0.0.113",
 		"hono": "4.9.1",
 		"workers-tagged-logger": "0.13.2"
 	},

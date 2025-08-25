@@ -1,10 +1,14 @@
 import type { HonoApp } from '@repo/hono-helpers'
 import type { SharedHonoEnv, SharedHonoVariables } from '@repo/hono-helpers/src/types'
 import type { ClaudeCodeContainer } from './claude-container'
+import type { ClaudeCodeAgent } from './agents/claude-code-agent'
 
 export type Env = SharedHonoEnv & {
 	// Claude Code Container binding
 	CLAUDE_CONTAINER: DurableObjectNamespace<ClaudeCodeContainer>
+
+	// Claude Code Agent binding (for Cloudflare Agent Framework)
+	CLAUDE_CODE_AGENT: DurableObjectNamespace<ClaudeCodeAgent>
 
 	// Anthropic API configuration
 	ANTHROPIC_API_KEY?: string
