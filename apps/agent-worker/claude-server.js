@@ -163,25 +163,17 @@ app.post('/', async (c) => {
 			additionalArgs,
 		} = requestBody
 
-		// Ultra-Simple Session Management with Temp Sandbox Support
-		let sessionWorkspacePath = cwd || process.cwd()
-		let sessionInfo = { sessionId: null, sessionPath: null, sandboxId: null, isTemp: false }
-
-		if (sessionId) {
-			// Existing session: create folder and use it
-			console.log(`🗂️ Using existing session: ${sessionId}`)
-			const { sessionPath, workspacePath } = ensureSessionFolder(sessionId, false)
-			sessionWorkspacePath = workspacePath
-			sessionInfo = { sessionId, sessionPath, sandboxId: null, isTemp: false }
-			console.log(`📁 Session workspace path: ${sessionWorkspacePath}`)
-		} else {
-			// New session: create temp sandbox folder
-			const sandboxId = generateSandboxId()
-			console.log(`🆕 Creating new temp sandbox: ${sandboxId}`)
-			const { sessionPath, workspacePath } = ensureSessionFolder(sandboxId, true)
-			sessionWorkspacePath = workspacePath
-			sessionInfo = { sessionId: null, sessionPath, sandboxId, isTemp: true }
-			console.log(`📁 Temp sandbox workspace path: ${sessionWorkspacePath}`)
+		// Simplified Session Management - Use Shared Workspace
+		let sessionWorkspacePath = cwd || '/workspace'
+		console.log(`📁 Using shared workspace: ${sessionWorkspacePath}`)
+		
+		// Ensure shared workspace directory exists
+		const fs = require('fs')
+		try {
+			fs.mkdirSync(sessionWorkspacePath, { recursive: true })
+			console.log(`📁 Shared workspace ready: ${sessionWorkspacePath}`)
+		} catch (error) {
+			console.warn(`⚠️ Workspace directory creation warning:`, error.message)
 		}
 
 		// ULTRA-SIMPLE: Direct request-to-SDK mapping (following official docs pattern)
@@ -196,10 +188,8 @@ app.post('/', async (c) => {
 			permissionMode: permissionMode || 'acceptEdits',
 			cwd: sessionWorkspacePath,
 			pathToClaudeCodeExecutable: pathToClaudeCodeExecutable || undefined, // undefined = SDK manages
-			// Session management - use resumeSessionId for specific sessions, continueSession for most recent
-			...(sessionId && { resumeSessionId: sessionId }),
-			// Only use continueSession when no specific sessionId is provided - don't pass it at all when using resumeSessionId
-			...(sessionId ? {} : { continueSession: continueSession || false }),
+			// Simplified session management - always try to continue in shared workspace
+			continueSession: continueSession !== false, // Default to true unless explicitly false
 		}
 
 		// Add optional parameters directly from request (no env var fallbacks)
@@ -220,7 +210,7 @@ app.post('/', async (c) => {
 				new ReadableStream({
 					async start(controller) {
 						try {
-							let capturedSessionId = sessionInfo.sessionId // Use existing sessionId if provided
+							let capturedSessionId = null // Will be captured from Claude Code SDK
 							let finalResultMessage = null // Buffer for final result message
 
 							// Create AbortController for this request
@@ -285,46 +275,16 @@ app.post('/', async (c) => {
 								}
 							}
 
-							// SDK completed - now handle sandbox renaming before final response
-							console.log('🔄 SDK execution completed, processing session management...')
+							// SDK completed
+							console.log('✅ SDK execution completed')
 
-							// Handle temp sandbox renaming for new sessions
-							if (!sessionInfo.sessionId && sessionInfo.isTemp && capturedSessionId) {
-								console.log(
-									`🔄 Renaming temp sandbox: ${sessionInfo.sandboxId} → ${capturedSessionId}`
-								)
-								const renameSuccess = renameSessionFolder(sessionInfo.sandboxId, capturedSessionId)
-
-								if (renameSuccess) {
-									// Update session info with final paths
-									const finalSessionPath = path.join('/sessions', capturedSessionId)
-									sessionInfo = {
-										sessionId: capturedSessionId,
-										sessionPath: finalSessionPath,
-										sandboxId: sessionInfo.sandboxId,
-										isTemp: false,
-										renamed: true,
-									}
-									console.log(`✅ Session folder renamed successfully`)
-								} else {
-									console.log(`⚠️ Session folder rename failed, keeping temp folder`)
-									sessionInfo.sessionId = capturedSessionId // Update session ID but keep temp folder
-									sessionInfo.renamed = false
-								}
-							}
-
-							// Stream the final result with correct session info
+							// Stream the final result
 							if (finalResultMessage) {
 								const finalData =
 									JSON.stringify({
 										type: 'result',
 										result: finalResultMessage.result,
 										sessionId: capturedSessionId,
-										sessionPath: sessionInfo.sessionPath,
-										// Additional session metadata for temp sandbox tracking
-										...(sessionInfo.sandboxId && { originalSandboxId: sessionInfo.sandboxId }),
-										...(sessionInfo.renamed !== undefined && { renamed: sessionInfo.renamed }),
-										...(sessionInfo.isTemp !== undefined && { wasTemp: sessionInfo.isTemp }),
 									}) + '\n'
 
 								controller.enqueue(new TextEncoder().encode(finalData))
@@ -356,7 +316,7 @@ app.post('/', async (c) => {
 			// Non-streaming response
 			console.log('📝 Starting non-streaming response')
 			const messages = []
-			let capturedSessionId = sessionInfo.sessionId // Use existing sessionId if provided
+			let capturedSessionId = null // Will be captured from Claude Code SDK
 
 			// Create AbortController for this request
 			const abortController = new AbortController()
@@ -390,32 +350,6 @@ app.post('/', async (c) => {
 				messages.push(message)
 			}
 
-			// SDK completed - now handle sandbox renaming before response
-			console.log('🔄 SDK execution completed, processing session management...')
-
-			// Handle temp sandbox renaming for new sessions
-			if (!sessionInfo.sessionId && sessionInfo.isTemp && capturedSessionId) {
-				console.log(`🔄 Renaming temp sandbox: ${sessionInfo.sandboxId} → ${capturedSessionId}`)
-				const renameSuccess = renameSessionFolder(sessionInfo.sandboxId, capturedSessionId)
-
-				if (renameSuccess) {
-					// Update session info with final paths
-					const finalSessionPath = path.join('/sessions', capturedSessionId)
-					sessionInfo = {
-						sessionId: capturedSessionId,
-						sessionPath: finalSessionPath,
-						sandboxId: sessionInfo.sandboxId,
-						isTemp: false,
-						renamed: true,
-					}
-					console.log(`✅ Session folder renamed successfully`)
-				} else {
-					console.log(`⚠️ Session folder rename failed, keeping temp folder`)
-					sessionInfo.sessionId = capturedSessionId // Update session ID but keep temp folder
-					sessionInfo.renamed = false
-				}
-			}
-
 			// Find the final result
 			const result = messages.find((m) => m.type === 'result')
 
@@ -426,16 +360,11 @@ app.post('/', async (c) => {
 				type: 'result',
 				result: result?.result || 'No result found',
 				sessionId: capturedSessionId,
-				sessionPath: sessionInfo.sessionPath,
 				requestId: requestId,
 				messages: verbose ? messages : undefined,
 				// Include metadata if available
 				...(result?.total_cost_usd && { cost_usd: result.total_cost_usd }),
 				...(result?.duration_ms && { duration_ms: result.duration_ms }),
-				// Additional session metadata for temp sandbox tracking
-				...(sessionInfo.sandboxId && { originalSandboxId: sessionInfo.sandboxId }),
-				...(sessionInfo.renamed && { renamed: sessionInfo.renamed }),
-				...(sessionInfo.isTemp !== undefined && { wasTemp: sessionInfo.isTemp }),
 			})
 		}
 	} catch (error) {

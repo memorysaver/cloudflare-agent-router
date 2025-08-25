@@ -100,9 +100,10 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 
 		if (requestBody.sessionId) {
 			// Auto-enable session resumption when sessionId provided
-			sessionWorkspacePath = `/sessions/${requestBody.sessionId}/workspace`
+			// Use shared workspace instead of session-specific directories
+			sessionWorkspacePath = sessionWorkspacePath || '/workspace'
 			console.log(`🗂️ Session resumption enabled for session: ${requestBody.sessionId}`)
-			console.log(`📁 Working directory set to: ${sessionWorkspacePath}`)
+			console.log(`📁 Working directory set to: ${sessionWorkspacePath} (shared workspace)`)
 		} else {
 			console.log('🆕 New session will be created (no sessionId provided)')
 		}

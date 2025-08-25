@@ -156,8 +156,6 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			// Execute Claude Code via container
 			const executionStream = await this.containerBridge.execute(content, {
 				sessionId: this.getSessionId(),
-				workspacePath: this.getWorkspacePath(),
-				context: this.getConversationContext(),
 				model: this.getCurrentModel(),
 			})
 
@@ -231,8 +229,6 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			// Execute Claude Code via container
 			const executionStream = await this.containerBridge.execute(content, {
 				sessionId: this.getSessionId(),
-				workspacePath: this.getWorkspacePath(),
-				context: this.getConversationContext(),
 				model: this.getCurrentModel(),
 			})
 
@@ -306,24 +302,6 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	}
 
 	/**
-	 * Get conversation context for Claude Code
-	 */
-	private getConversationContext(): string {
-		const messages = this.typedState.messages || []
-		if (messages.length === 0) {
-			return ''
-		}
-
-		// Build conversation history from recent messages
-		const context = messages
-			.slice(-10) // Get last 10 messages to avoid token limits
-			.map((msg: AgentMessage) => `${msg.role}: ${msg.content}`)
-			.join('\n')
-
-		return context
-	}
-
-	/**
 	 * Generate unique message ID
 	 */
 	private generateId(): string {
@@ -341,8 +319,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	 * Get workspace path for session
 	 */
 	private getWorkspacePath(): string {
-		const sessionId = this.getSessionId()
-		return `/workspace/session-${sessionId}`
+		return '/workspace'
 	}
 
 	/**
@@ -379,30 +356,21 @@ export class ClaudeContainerBridge {
 		prompt: string,
 		options: {
 			sessionId: string
-			workspacePath: string
-			context: string
 			model?: string
 		}
 	): Promise<ReadableStream> {
-		// Check if we have existing conversation context (indicating session continuation)
-		const hasContext = options.context && options.context.trim().length > 0
-
 		// Prepare Claude Code execution options
 		const claudeOptions: ClaudeCodeOptions = {
 			prompt,
 			model: options.model || 'groq/openai/gpt-oss-120b', // Use provided model or default
-			sessionId: options.sessionId,
-			continueSession: Boolean(hasContext), // Continue session if we have context
-			resumeSessionId: hasContext ? options.sessionId : undefined,
-			cwd: options.workspacePath,
+			sessionId: options.sessionId, // Pass the demo session ID to Claude Code SDK
+			continueSession: true, // Always try to continue (let Claude Code handle it)
+			cwd: '/workspace', // Shared workspace
 			stream: true,
 			verbose: false,
 			maxTurns: 10,
 			permissionMode: 'acceptEdits',
-			// Include conversation context as system prompt appendix
-			appendSystemPrompt: hasContext
-				? `Previous conversation context:\n${options.context}`
-				: undefined,
+			systemPrompt: '', // Empty - let Claude Code use default
 		}
 
 		// Prepare environment variables
