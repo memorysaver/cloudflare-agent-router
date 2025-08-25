@@ -76,6 +76,7 @@ Real-time UI Updates
   - Container lifecycle management
   - Output parsing and streaming
 - **State Schema**:
+
   ```typescript
   interface AgentSessionState {
     // Agent framework standard state
