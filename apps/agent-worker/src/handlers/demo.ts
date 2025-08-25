@@ -51,9 +51,9 @@ function createSessionMetadata(c: Context<App>, sessionId: string): SessionMetad
 		createdAt: Date.now(),
 		userAgent: c.req.header('user-agent'),
 		ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for'),
-		lastActivity: Date.now()
+		lastActivity: Date.now(),
 	}
-	
+
 	sessionStore.set(sessionId, metadata)
 	return metadata
 }
@@ -80,10 +80,10 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 	if (!sessionId) {
 		const newSessionId = generateSessionId()
 		console.log(`📝 Creating new demo session: ${newSessionId}`)
-		
+
 		// Create session metadata
 		createSessionMetadata(c, newSessionId)
-		
+
 		// Use 302 redirect for better UX (temporary redirect)
 		return c.redirect(`/demo/${newSessionId}`, 302)
 	}
@@ -695,30 +695,30 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 export async function handleDemoHealth(c: Context<App>): Promise<Response> {
 	const now = Date.now()
 	const activeThreshold = 30 * 60 * 1000 // 30 minutes
-	
+
 	// Clean up old sessions (older than 30 minutes of inactivity)
 	for (const [sessionId, metadata] of sessionStore.entries()) {
-		if (metadata.lastActivity && (now - metadata.lastActivity) > activeThreshold) {
+		if (metadata.lastActivity && now - metadata.lastActivity > activeThreshold) {
 			sessionStore.delete(sessionId)
 		}
 	}
-	
+
 	// Get active sessions
 	const activeSessions = Array.from(sessionStore.values()).filter(
-		metadata => metadata.lastActivity && (now - metadata.lastActivity) <= activeThreshold
+		(metadata) => metadata.lastActivity && now - metadata.lastActivity <= activeThreshold
 	)
-	
+
 	const stats = {
 		totalSessions: sessionStore.size,
 		activeSessions: activeSessions.length,
-		activeSessionsData: activeSessions.map(session => ({
-			id: session.id.substring(0, 8) + '...',  // Truncate for privacy
+		activeSessionsData: activeSessions.map((session) => ({
+			id: session.id.substring(0, 8) + '...', // Truncate for privacy
 			createdAt: new Date(session.createdAt).toISOString(),
 			lastActivity: session.lastActivity ? new Date(session.lastActivity).toISOString() : null,
-			userAgent: session.userAgent?.substring(0, 50) + '...' || 'Unknown'
+			userAgent: session.userAgent?.substring(0, 50) + '...' || 'Unknown',
 		})),
-		timestamp: new Date(now).toISOString()
+		timestamp: new Date(now).toISOString(),
 	}
-	
+
 	return c.json(stats)
 }
