@@ -53,7 +53,13 @@ export class ClaudeCodeAgent extends Agent<Env> {
 
 	// Type-safe state access
 	get typedState(): AgentSessionState {
-		return this.typedState as AgentSessionState
+		try {
+			return this.state as AgentSessionState
+		} catch (error) {
+			// If state is not yet initialized (SQLite table doesn't exist), return initial state
+			console.log('State not yet initialized, returning initial state:', error)
+			return this.initialState as AgentSessionState
+		}
 	}
 
 	/**
