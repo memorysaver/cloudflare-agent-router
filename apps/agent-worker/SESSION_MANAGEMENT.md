@@ -116,7 +116,7 @@ async execute(prompt: string, options: {
 - **No Session Folders**: Eliminated complex `/sessions/{sessionId}/workspace` structure
 - **Container Isolation**: Each session gets dedicated container for true isolation
 - **Shared Workspace**: Simple `/workspace` path for all operations within a session
-- **Auto-Continue**: Claude Code SDK handles session continuation automatically
+- **Auto-Continue**: Claude CLI wrapper handles session continuation automatically
 
 ### ✅ **Perfect Session Isolation**
 

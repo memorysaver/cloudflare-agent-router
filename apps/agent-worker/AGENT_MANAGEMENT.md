@@ -13,7 +13,7 @@ This document provides comprehensive technical documentation for the Cloudflare 
 │                 │    │                  │    │                 │    │                  │
 │ - Model Select  │    │ - WebSocket      │    │ - Session State │    │ - Container      │
 │ - Real-time UI  │    │ - REST API       │    │ - Message Queue │    │ - claude-server  │
-│ - Session Mgmt  │    │ - Request Route  │    │ - Agent Bridge  │    │ - Claude Code SDK│
+│ - Session Mgmt  │    │ - Request Route  │    │ - Agent Bridge  │    │ - Claude Code CLI│
 └─────────────────┘    └──────────────────┘    └─────────────────┘    └──────────────────┘
                                  │
                                  ▼
@@ -106,7 +106,7 @@ async execute(prompt: string, options: {
     const claudeOptions: ClaudeCodeOptions = {
         prompt,
         model: options.model || 'groq/openai/gpt-oss-120b',
-        sessionId: options.sessionId, // Pass sessionId to Claude Code SDK
+        sessionId: options.sessionId, // Pass sessionId to Claude Code CLI
         continueSession: true,        // Always try to continue
         cwd: '/workspace',           // Shared workspace
         stream: true,
@@ -176,7 +176,7 @@ app.post('/', async (c) => {
   // Ensure shared workspace directory exists
   fs.mkdirSync(sessionWorkspacePath, { recursive: true })
 
-  // 3. Configure Claude Code SDK options
+  // 3. Configure Claude Code CLI options
   const options = {
     systemPrompt: systemPrompt || '', // Empty - let Claude Code use default
     maxTurns: maxTurns,
@@ -187,7 +187,7 @@ app.post('/', async (c) => {
     continueSession: continueSession !== false, // Default to true unless explicitly false
   }
 
-  // 4. Execute Claude Code SDK with streaming
+  // 4. Execute Claude Code CLI with streaming
   for await (const message of query({ prompt, abortController, options })) {
     // Stream responses back through container to agent to WebSocket
     controller.enqueue(new TextEncoder().encode(JSON.stringify(message) + '\n'))
@@ -453,7 +453,7 @@ interface WSMessage {
 ### Architecture Overview
 
 ```
-Claude Code SDK → LiteLLM Router Worker → Model Provider APIs
+Claude Code CLI → LiteLLM Router Worker → Model Provider APIs
                       ↓
                  Model Routing Logic
                  Authentication
@@ -482,14 +482,14 @@ const claudeOptions: ClaudeCodeOptions = {
   // ... other options
 }
 
-// Container configures environment for Claude Code SDK
+// Container configures environment for Claude Code CLI
 this.envVars = {
   ANTHROPIC_MODEL: options.model,
   ANTHROPIC_BASE_URL: 'https://litellm-router.memorysaver.workers.dev',
   ANTHROPIC_AUTH_TOKEN: 'auto-detect',
 }
 
-// Claude Code SDK makes request to LiteLLM router
+// Claude Code CLI makes request to LiteLLM router
 // Router routes based on model prefix: groq/*, openrouter/*, anthropic/*
 ```
 
@@ -535,7 +535,7 @@ router_settings:
 
 ### Bridge Architecture
 
-The `ClaudeContainerBridge` class serves as the critical interface layer between the Cloudflare Agent Framework and the Claude Code SDK container runtime.
+The `ClaudeContainerBridge` class serves as the critical interface layer between the Cloudflare Agent Framework and the Claude Code CLI container runtime.
 
 **Key Components**:
 
@@ -602,7 +602,7 @@ if (this.env.ANTHROPIC_API_KEY) {
 **Request Transformation**:
 
 ```typescript
-// Agent framework request → Claude Code SDK format
+// Agent framework request → Claude Code CLI format
 const claudeOptions: ClaudeCodeOptions = {
   prompt, // User input
   model: options.model || 'groq/openai/gpt-oss-120b', // Model selection
@@ -643,7 +643,7 @@ console.log('🤖 Container Bridge execution:', {
 })
 
 // 3. Container Runtime Level
-console.log('🤖 Claude Code SDK proxy received request')
+console.log('🤖 Claude Code CLI proxy received request')
 
 // 4. SDK Wrapper Level (claude-server.js)
 console.log('🤖 Request ID:', requestId)
@@ -762,7 +762,7 @@ if (model) {
 **3. Container Startup Issues**
 
 ```javascript
-// Symptom: "Failed to load Claude Code SDK"
+// Symptom: "Failed to load Claude Code CLI"
 // Check: Container dependencies and image build
 RUN npm install --verbose @anthropic-ai/claude-code hono @hono/node-server
 ```

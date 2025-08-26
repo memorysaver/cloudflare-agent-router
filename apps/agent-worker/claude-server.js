@@ -168,10 +168,24 @@ app.post('/', async (c) => {
 
 		// Execute using Claude CLI Wrapper (replaces broken SDK)
 		console.log(`🤖 Executing Claude CLI Wrapper...`)
-		const response = await cliWrapper.execute(options, envVars)
+		const response = cliWrapper.execute(options, envVars) // No await for streaming!
 
-		console.log(`🤖 CLI Wrapper response status: ${response.status}`)
-		return response
+		// Determine if streaming based on outputFormat or deprecated stream flag
+		const isStreaming = 
+			options.outputFormat === 'stream-json' ||
+			(options.outputFormat === undefined && options.stream)
+
+		if (isStreaming) {
+			console.log(`🤖 Returning streaming response immediately (no await)`)
+			// Return streaming response immediately - don't await!
+			return response
+		} else {
+			console.log(`🤖 Awaiting non-streaming response completion`)
+			// For non-streaming, await the complete response
+			const completedResponse = await response
+			console.log(`🤖 CLI Wrapper response status: ${completedResponse.status}`)
+			return completedResponse
+		}
 	} catch (error) {
 		console.error('❌ Claude CLI Wrapper server error:', error)
 		return c.json(

@@ -1,14 +1,14 @@
-# Claude Code SDK Proxy
+# Claude Code CLI Proxy
 
-A simple HTTP API wrapper for the Claude Code SDK, enabling web-based access to Claude Code's full capabilities with LiteLLM router integration.
+A simple HTTP API wrapper for the Claude Code CLI, enabling web-based access to Claude Code's full capabilities with LiteLLM router integration.
 
 ## Overview
 
-This proxy provides a clean HTTP interface to the Claude Code SDK while maintaining the official SDK patterns. It's designed with ultra-simple architecture principles:
+This proxy provides a clean HTTP interface to the Claude Code CLI while maintaining the official CLI patterns. It's designed with ultra-simple architecture principles:
 
 - **Minimal Environment Variables**: Only LiteLLM router configuration
-- **Direct Parameter Mapping**: HTTP request parameters map directly to Claude Code SDK
-- **Official SDK Compliance**: Follows Claude Code SDK documentation exactly
+- **Direct Parameter Mapping**: HTTP request parameters map directly to Claude Code CLI
+- **Official CLI Compliance**: Follows Claude Code CLI documentation exactly
 - **Container Isolation**: Each request runs in isolated Docker containers
 - **Session Management**: Automatic fresh sessions with proper cleanup
 
@@ -114,9 +114,9 @@ LiteLLM Router → AI Models
 | `stream`       | `boolean` | `false`                      | Enable real-time streaming responses (deprecated - use `outputFormat`) |
 | `verbose`      | `boolean` | `false`                      | Include detailed logs and full message history |
 
-#### Claude Code SDK Parameters
+#### Claude Code CLI Parameters
 
-All Claude Code SDK parameters are supported directly. See [Claude Code SDK documentation](https://docs.anthropic.com/en/docs/claude-code/sdk#type-script) for complete reference.
+All Claude Code CLI parameters are supported directly. See [Claude Code CLI documentation](https://docs.anthropic.com/en/docs/claude-code/sdk#core-usage) for complete reference.
 
 | Parameter                    | Type                                                          | Default               | Description                                                  |
 | ---------------------------- | ------------------------------------------------------------- | --------------------- | ------------------------------------------------------------ |
@@ -195,7 +195,7 @@ Only these environment variables are injected into the container:
 2. **Container Selection**: Get or create session-specific container `claude-session-{sessionId}`
 3. **Workspace Setup**: Ensure shared `/workspace` directory exists in container
 4. **Environment Setup**: Only LiteLLM configuration as environment variables
-5. **SDK Execution**: Auto-continue with shared workspace and session context
+5. **CLI Execution**: Auto-continue with shared workspace and session context
 
 Example session mapping:
 
@@ -211,7 +211,7 @@ Example session mapping:
 containerId = "claude-session-demo-abc123"
 workspace = "/workspace"  // Shared across all requests for this session
 
-// Claude Code SDK Call
+// Claude Code CLI Call
 query({
   prompt: "Create a hello.py file",
   options: {
@@ -522,7 +522,7 @@ The proxy provides detailed logging:
 🤖 LiteLLM Base URL: https://litellm-router.memorysaver.workers.dev
 ```
 
-Enable verbose mode for complete Claude Code SDK logs:
+Enable verbose mode for complete Claude Code CLI logs:
 
 ```json
 { "verbose": true }
@@ -560,7 +560,7 @@ Set in `wrangler.jsonc`:
 - **Automatic Continuation**: `continueSession: true` enables seamless context preservation
 - **Scalability**: Container-per-session allows unlimited concurrent sessions
 - **Simplicity**: Minimal environment variables, direct parameter mapping
-- **Compliance**: Follows official Claude Code SDK patterns exactly
-- **Flexibility**: All Claude Code SDK features available via HTTP
+- **Compliance**: Follows official Claude Code CLI patterns exactly
+- **Flexibility**: All Claude Code CLI features available via HTTP
 - **Maintainability**: Clean separation between API config and request data
 - **Debuggability**: Session-specific containers enable precise debugging

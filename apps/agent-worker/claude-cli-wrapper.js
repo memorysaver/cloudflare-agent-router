@@ -130,6 +130,12 @@ class ClaudeCliWrapper {
 			outputFormat = 'stream-json'
 		}
 		flags.push('--output-format', outputFormat)
+		
+		// Claude CLI requirement: --print mode with --output-format=stream-json requires --verbose
+		if (outputFormat === 'stream-json' && !options.verbose) {
+			console.log('🚀 STREAMING: Auto-enabling --verbose for stream-json output format')
+			flags.push('--verbose')
+		}
 
 		return flags
 	}
@@ -162,9 +168,19 @@ class ClaudeCliWrapper {
 	 * @returns {Promise<Response>} - Streaming Response
 	 */
 	async executeStreaming(flags, env, httpSessionId, options) {
+		const self = this // Capture correct 'this' reference for use inside ReadableStream
+		
+		console.log('🚀 STREAMING: Starting executeStreaming method')
+		console.log('🚀 STREAMING: Flags:', flags.join(' '))
+		console.log('🚀 STREAMING: Environment PWD:', env.PWD)
+		console.log('🚀 STREAMING: HTTP Session ID:', httpSessionId)
+		console.log('🚀 STREAMING: Options:', JSON.stringify(options, null, 2))
+		
 		return new Response(
 			new ReadableStream({
 				async start(controller) {
+					console.log('🚀 STREAMING: ReadableStream start() called')
+					let controllerClosed = false
 					try {
 						let capturedSessionId = null
 						let finalResultMessage = null
@@ -199,53 +215,87 @@ class ClaudeCliWrapper {
 							}
 						}
 
+						console.log('🚀 STREAMING: About to spawn claude CLI process')
+						console.log('🚀 STREAMING: Command: claude', flags.join(' '))
+						console.log('🚀 STREAMING: Working directory:', env.PWD)
+						console.log('🚀 STREAMING: Environment variables:')
+						Object.keys(env).forEach(key => {
+							if (key.includes('ANTHROPIC') || key === 'PWD') {
+								console.log(`  ${key}: ${env[key]}`)
+							}
+						})
+
 						const claudeProcess = spawn('claude', flags, {
 							env,
 							stdio: [stdinData ? 'pipe' : 'ignore', 'pipe', 'pipe'],
 							cwd: env.PWD,
 						})
 
+						console.log('🚀 STREAMING: Claude process spawned, PID:', claudeProcess.pid)
+
 						// Handle stdin data for stream-json input
 						if (stdinData && claudeProcess.stdin) {
+							console.log('🚀 STREAMING: Writing stdin data to process')
 							claudeProcess.stdin.write(stdinData)
 							claudeProcess.stdin.end()
+							console.log('🚀 STREAMING: Stdin data written and closed')
+						} else {
+							console.log('🚀 STREAMING: No stdin data to write')
 						}
 
 						// Handle process errors
 						claudeProcess.on('error', (error) => {
-							console.error('❌ Claude CLI spawn error:', error)
-							const errorData =
-								JSON.stringify({
-									type: 'error',
-									error: 'CLI execution failed',
-									message: error.message,
-								}) + '\n'
-							controller.enqueue(new TextEncoder().encode(errorData))
-							controller.close()
-						})
-
-						// Handle unexpected process exit
-						claudeProcess.on('close', (code) => {
-							if (code !== 0) {
-								console.error(`❌ Claude CLI exited with code: ${code}`)
+							console.error('🚀 STREAMING: ❌ Claude CLI spawn error:', error)
+							console.error('🚀 STREAMING: Error type:', error.constructor.name)
+							console.error('🚀 STREAMING: Error code:', error.code)
+							console.error('🚀 STREAMING: Error message:', error.message)
+							if (!controllerClosed) {
 								const errorData =
 									JSON.stringify({
 										type: 'error',
 										error: 'CLI execution failed',
-										message: `Claude CLI exited with code ${code}`,
+										message: error.message,
 									}) + '\n'
 								controller.enqueue(new TextEncoder().encode(errorData))
+								controller.close()
+								controllerClosed = true
 							}
-							controller.close()
+						})
+
+						// Handle unexpected process exit
+						claudeProcess.on('close', (code) => {
+							console.log(`🚀 STREAMING: Claude CLI process closed with code: ${code}`)
+							if (!controllerClosed) {
+								if (code !== 0) {
+									console.error(`🚀 STREAMING: ❌ Claude CLI exited with non-zero code: ${code}`)
+									const errorData =
+										JSON.stringify({
+											type: 'error',
+											error: 'CLI execution failed',
+											message: `Claude CLI exited with code ${code}`,
+										}) + '\n'
+									controller.enqueue(new TextEncoder().encode(errorData))
+								} else {
+									console.log('🚀 STREAMING: ✅ Claude CLI process completed successfully')
+								}
+								controller.close()
+								controllerClosed = true
+							}
 						})
 
 						// Parse streaming JSON output line by line
+						console.log('🚀 STREAMING: Creating readline interface for stdout')
 						const rl = readline.createInterface({
 							input: claudeProcess.stdout,
 						})
 
+						console.log('🚀 STREAMING: Setting up readline event handlers')
 						rl.on('line', (line) => {
-							if (!line.trim()) return
+							console.log('🚀 STREAMING: Received line from stdout:', line.substring(0, 100) + (line.length > 100 ? '...' : ''))
+							if (!line.trim()) {
+								console.log('🚀 STREAMING: Skipping empty line')
+								return
+							}
 
 							try {
 								const message = JSON.parse(line)
@@ -258,14 +308,14 @@ class ClaudeCliWrapper {
 
 									// Store mapping if HTTP sessionId provided
 									if (httpSessionId) {
-										this.sessionMap.set(httpSessionId, capturedSessionId)
+										self.sessionMap.set(httpSessionId, capturedSessionId)
 										console.log(`🗂️ Mapped ${httpSessionId} → ${capturedSessionId}`)
 									}
 								} else if (message.type === 'result' && message.session_id) {
 									// Also capture from final result (official location)
 									capturedSessionId = message.session_id
 									if (httpSessionId) {
-										this.sessionMap.set(httpSessionId, message.session_id)
+										self.sessionMap.set(httpSessionId, message.session_id)
 										console.log(`🗂️ Updated mapping ${httpSessionId} → ${message.session_id}`)
 									}
 									finalResultMessage = message
@@ -275,7 +325,7 @@ class ClaudeCliWrapper {
 								const data = line + '\n'
 								controller.enqueue(new TextEncoder().encode(data))
 							} catch (error) {
-								console.error('❌ Failed to parse CLI JSON line:', line, error)
+								console.error('🚀 STREAMING: ❌ Failed to parse CLI JSON line:', line, error)
 								// Still stream the raw line even if JSON parsing fails
 								const data = line + '\n'
 								controller.enqueue(new TextEncoder().encode(data))
@@ -283,12 +333,21 @@ class ClaudeCliWrapper {
 						})
 
 						rl.on('close', () => {
-							// No need to send additional data - final result was already streamed
-							console.log('✅ CLI streaming completed')
-							controller.close()
+							console.log('🚀 STREAMING: ✅ Readline interface closed - CLI streaming completed')
+							if (!controllerClosed) {
+								controller.close()
+								controllerClosed = true
+							}
 						})
+
+						// Add stderr logging
+						claudeProcess.stderr.on('data', (data) => {
+							console.error('🚀 STREAMING: STDERR:', data.toString())
+						})
+						
+						console.log('🚀 STREAMING: All event handlers set up, waiting for claude CLI output...')
 					} catch (error) {
-						console.error('❌ CLI streaming error:', error)
+						console.error('🚀 STREAMING: ❌ CLI streaming setup error:', error)
 						const errorData =
 							JSON.stringify({
 								type: 'result',
