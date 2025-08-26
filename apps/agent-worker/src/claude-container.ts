@@ -1,12 +1,21 @@
 import { Container } from '@cloudflare/containers'
 
 export interface ClaudeCodeOptions {
-	// Required
-	prompt: string
+	// Required (prompt for text format, messages for stream-json format)
+	prompt?: string
+	messages?: Array<{
+		role: 'user' | 'assistant'
+		content: Array<{
+			type: 'text'
+			text: string
+		}>
+	}>
 
-	// API Configuration
+	// Input/Output Format Configuration
+	inputFormat?: 'text' | 'stream-json' // Default: "text"
+	outputFormat?: 'text' | 'json' | 'stream-json' // Default: "json"
 	model?: string // Default: "groq/openai/gpt-oss-120b"
-	stream?: boolean // Default: true
+	stream?: boolean // Default: true (deprecated - use outputFormat instead)
 	verbose?: boolean // Default: false
 
 	// Claude Code SDK Core Options
@@ -28,7 +37,7 @@ export interface ClaudeCodeOptions {
 	permissionPromptTool?: string // Default: undefined
 
 	// MCP Configuration
-	mcpConfig?: string // Default: undefined
+	mcpConfig?: object // Default: undefined (JSON object that will be saved as .mcp.json)
 
 	// Runtime Configuration
 	cwd?: string // Default: undefined
@@ -98,10 +107,8 @@ export class ClaudeCodeContainer extends Container {
 		console.log(`  - ANTHROPIC_BASE_URL: ${this.envVars.ANTHROPIC_BASE_URL}`)
 		console.log(`  - ANTHROPIC_AUTH_TOKEN: ${this.envVars.ANTHROPIC_AUTH_TOKEN}`)
 
-		// Start the container (HTTP server will start automatically)
-		await this.start()
-
 		// Create a POST request to the container's HTTP server with actual request data
+		// Note: containerFetch() automatically starts container if needed and renews activity timeout
 		const request = new Request(`http://localhost:${this.defaultPort}/`, {
 			method: 'POST',
 			headers: {
@@ -111,9 +118,16 @@ export class ClaudeCodeContainer extends Container {
 		})
 
 		console.log(`🤖 Web Request Data Sent to Container:`)
-		console.log(
-			`  - Prompt: ${options.prompt.substring(0, 50)}${options.prompt.length > 50 ? '...' : ''}`
-		)
+		console.log(`  - Input Format: ${options.inputFormat || 'text'}`)
+		console.log(`  - Output Format: ${options.outputFormat || 'json'}`)
+		if (options.prompt) {
+			console.log(
+				`  - Prompt: ${options.prompt.substring(0, 50)}${options.prompt.length > 50 ? '...' : ''}`
+			)
+		}
+		if (options.messages) {
+			console.log(`  - Messages: ${options.messages.length} messages`)
+		}
 		console.log(`  - Model: ${options.model}`)
 		console.log(`  - Stream: ${options.stream}`)
 		console.log(`  - Verbose: ${options.verbose}`)

@@ -156,8 +156,6 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			// Execute Claude Code via container
 			const executionStream = await this.containerBridge.execute(content, {
 				sessionId: this.getSessionId(),
-				workspacePath: this.getWorkspacePath(),
-				context: this.getConversationContext(),
 				model: this.getCurrentModel(),
 			})
 
@@ -228,16 +226,14 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			}
 			this.addMessageToState(userMessage)
 
-			// Execute Claude Code via container
-			const executionStream = await this.containerBridge.execute(content, {
+			// Execute Claude Code via container (use non-streaming for WebSocket since we wait for completion)
+			const executionResult = await this.containerBridge.executeNonStreaming(content, {
 				sessionId: this.getSessionId(),
-				workspacePath: this.getWorkspacePath(),
-				context: this.getConversationContext(),
 				model: this.getCurrentModel(),
 			})
 
-			// Process the streaming response
-			await this.processClaudeStream(executionStream)
+			// Process the single response and add to state
+			await this.processClaudeResponse(executionResult)
 		} catch (error) {
 			console.error('ClaudeCodeAgent processMessage error:', error)
 
@@ -287,6 +283,82 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	}
 
 	/**
+	 * Process single JSON response from Claude Code (non-streaming)
+	 */
+	private async processClaudeResponse(response: any): Promise<void> {
+		console.log('Processing Claude response:', response)
+
+		// Handle official Claude Code SDK response format
+		if (response && response.type === 'result' && response.result !== undefined) {
+			// Update session mapping with official session_id
+			if (response.session_id && this.getSessionId() !== response.session_id) {
+				this.setState({
+					...this.typedState,
+					claudeSession: {
+						...this.typedState.claudeSession,
+						id: response.session_id,
+					},
+				})
+				console.log(`🗂️ Updated agent session ID to: ${response.session_id}`)
+			}
+
+			// Create assistant message from the SDK response
+			const assistantMessage: AgentMessage = {
+				id: this.generateId(),
+				role: 'assistant',
+				content: response.result,
+				type: response.is_error
+					? 'error'
+					: response.subtype === 'success'
+						? 'result'
+						: response.subtype,
+				timestamp: Date.now(),
+			}
+
+			this.addMessageToState(assistantMessage)
+			console.log('Added assistant message to state:', assistantMessage)
+
+			// Log SDK metadata for monitoring
+			if (response.total_cost_usd) {
+				console.log(`💰 Request cost: $${response.total_cost_usd}`)
+			}
+			if (response.duration_ms) {
+				console.log(
+					`⏱️ Total duration: ${response.duration_ms}ms (API: ${response.duration_api_ms}ms)`
+				)
+			}
+			if (response.num_turns) {
+				console.log(`🔄 Turns: ${response.num_turns}`)
+			}
+		} else if (response && response.content) {
+			// Legacy format support (in case of old responses)
+			const assistantMessage: AgentMessage = {
+				id: this.generateId(),
+				role: 'assistant',
+				content: response.content,
+				type: response.type || 'result',
+				timestamp: Date.now(),
+			}
+
+			this.addMessageToState(assistantMessage)
+			console.log('Added assistant message to state (legacy format):', assistantMessage)
+		} else {
+			console.warn('Unexpected Claude response format:', response)
+
+			// Fallback: create error message
+			const errorMessage: AgentMessage = {
+				id: this.generateId(),
+				role: 'assistant',
+				content: 'Sorry, I received an unexpected response format.',
+				type: 'error',
+				timestamp: Date.now(),
+			}
+
+			this.addMessageToState(errorMessage)
+		}
+	}
+
+	/**
 	 * Add message to agent state
 	 */
 	private addMessageToState(message: AgentMessage): void {
@@ -303,24 +375,6 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	 */
 	async getState(): Promise<AgentSessionState> {
 		return this.typedState
-	}
-
-	/**
-	 * Get conversation context for Claude Code
-	 */
-	private getConversationContext(): string {
-		const messages = this.typedState.messages || []
-		if (messages.length === 0) {
-			return ''
-		}
-
-		// Build conversation history from recent messages
-		const context = messages
-			.slice(-10) // Get last 10 messages to avoid token limits
-			.map((msg: AgentMessage) => `${msg.role}: ${msg.content}`)
-			.join('\n')
-
-		return context
 	}
 
 	/**
@@ -341,8 +395,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	 * Get workspace path for session
 	 */
 	private getWorkspacePath(): string {
-		const sessionId = this.getSessionId()
-		return `/workspace/session-${sessionId}`
+		return '/workspace'
 	}
 
 	/**
@@ -373,36 +426,27 @@ export class ClaudeContainerBridge {
 	}
 
 	/**
-	 * Execute Claude Code with agent context
+	 * Execute Claude Code with agent context (streaming)
 	 */
 	async execute(
 		prompt: string,
 		options: {
 			sessionId: string
-			workspacePath: string
-			context: string
 			model?: string
 		}
 	): Promise<ReadableStream> {
-		// Check if we have existing conversation context (indicating session continuation)
-		const hasContext = options.context && options.context.trim().length > 0
-
 		// Prepare Claude Code execution options
 		const claudeOptions: ClaudeCodeOptions = {
 			prompt,
 			model: options.model || 'groq/openai/gpt-oss-120b', // Use provided model or default
-			sessionId: options.sessionId,
-			continueSession: Boolean(hasContext), // Continue session if we have context
-			resumeSessionId: hasContext ? options.sessionId : undefined,
-			cwd: options.workspacePath,
+			sessionId: options.sessionId, // Pass the demo session ID to Claude Code SDK
+			continueSession: true, // Always try to continue (let Claude Code handle it)
+			cwd: '/workspace', // Shared workspace
 			stream: true,
 			verbose: false,
 			maxTurns: 10,
 			permissionMode: 'acceptEdits',
-			// Include conversation context as system prompt appendix
-			appendSystemPrompt: hasContext
-				? `Previous conversation context:\n${options.context}`
-				: undefined,
+			systemPrompt: '', // Empty - let Claude Code use default
 		}
 
 		// Prepare environment variables
@@ -424,6 +468,51 @@ export class ClaudeContainerBridge {
 		// Execute and return stream
 		const response = await container.executeClaudeCode(claudeOptions, envVars)
 		return response.body!
+	}
+
+	/**
+	 * Execute Claude Code with agent context (non-streaming for WebSocket)
+	 */
+	async executeNonStreaming(
+		prompt: string,
+		options: {
+			sessionId: string
+			model?: string
+		}
+	): Promise<any> {
+		// Prepare Claude Code execution options (non-streaming)
+		const claudeOptions: ClaudeCodeOptions = {
+			prompt,
+			model: options.model || 'groq/openai/gpt-oss-120b',
+			sessionId: options.sessionId,
+			continueSession: true,
+			cwd: '/workspace',
+			stream: false, // Non-streaming for WebSocket
+			verbose: false,
+			maxTurns: 10,
+			permissionMode: 'acceptEdits',
+			systemPrompt: '',
+		}
+
+		// Prepare environment variables
+		const envVars: Record<string, string> = {
+			ANTHROPIC_AUTH_TOKEN: this.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
+			ANTHROPIC_BASE_URL:
+				this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
+		}
+
+		if (this.env.ANTHROPIC_API_KEY) {
+			envVars.ANTHROPIC_API_KEY = this.env.ANTHROPIC_API_KEY
+		}
+
+		// Get session-specific container instance
+		const containerId = `claude-session-${options.sessionId}`
+		const id = this.env.CLAUDE_CONTAINER.idFromName(containerId)
+		const container = this.env.CLAUDE_CONTAINER.get(id)
+
+		// Execute and return JSON response
+		const response = await container.executeClaudeCode(claudeOptions, envVars)
+		return await response.json()
 	}
 }
 
@@ -466,23 +555,27 @@ export class ClaudeOutputParser {
 		// Skip empty lines
 		if (!cleanLine.trim()) return null
 
-		// Try to parse as Claude Code JSON response first
+		// Try to parse as Claude Code stream-json format first
 		try {
 			if (cleanLine.startsWith('{') && cleanLine.endsWith('}')) {
 				const parsed = JSON.parse(cleanLine)
 
-				// Handle different Claude Code response formats
-				if (parsed.type === 'result' && parsed.result !== undefined) {
-					// Format: {"type":"result","result":"content",...}
+				// Handle official Claude Code stream-json formats
+				if (parsed.type === 'result') {
+					// Final result message with SDK format
 					return {
 						id: this.generateId(),
 						role: 'assistant',
-						content: parsed.result,
-						type: 'result',
+						content: parsed.result || 'No content',
+						type: parsed.is_error
+							? 'error'
+							: parsed.subtype === 'success'
+								? 'result'
+								: parsed.subtype,
 						timestamp: Date.now(),
 					}
 				} else if (parsed.type === 'assistant' && parsed.content) {
-					// Format: {"type":"assistant","content":"content"}
+					// Assistant message during streaming
 					return {
 						id: this.generateId(),
 						role: 'assistant',
@@ -490,17 +583,31 @@ export class ClaudeOutputParser {
 						type: 'result',
 						timestamp: Date.now(),
 					}
-				} else if (parsed.type === 'error' && parsed.message) {
-					// Format: {"type":"error","message":"error text"}
+				} else if (parsed.type === 'tool_call') {
+					// Tool usage message
 					return {
 						id: this.generateId(),
 						role: 'assistant',
-						content: parsed.message,
-						type: 'error',
+						content: `Using tool: ${parsed.tool}${parsed.input ? ' with input: ' + JSON.stringify(parsed.input) : ''}`,
+						type: 'tool_use',
 						timestamp: Date.now(),
 					}
+				} else if (parsed.type === 'tool_result') {
+					// Tool result message
+					return {
+						id: this.generateId(),
+						role: 'assistant',
+						content: `Tool ${parsed.tool} result: ${parsed.result}`,
+						type: 'tool_use',
+						timestamp: Date.now(),
+					}
+				} else if (parsed.type === 'system' && parsed.subtype === 'init') {
+					// System initialization message - don't create agent message, just log
+					console.log(`🔄 Claude session initialized: ${parsed.session_id}`)
+					return null
 				}
-				// If it's JSON but doesn't match expected formats, skip it
+				// Other system messages or unknown formats are ignored
+				return null
 			}
 		} catch {
 			// Not JSON, continue with text parsing

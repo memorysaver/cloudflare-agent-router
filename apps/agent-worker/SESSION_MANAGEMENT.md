@@ -1,257 +1,305 @@
-# Claude Code Session Management: Session Folder Sandboxing
+# Claude Code Session Management: Shared Workspace Architecture
 
 ## Architecture Overview
 
-**Core Concept**: Session-based filesystem sandboxing with future R2 persistence
+**Core Concept**: Session ID → Container Isolation → Shared Workspace → Auto-Continue
 
-### Session Folder Structure
+### New Session Architecture Design
 
 ```
-Container Filesystem:
-/sessions/
-├── {sessionId-1}/                    # Session sandbox folder
-│   ├── workspace/                    # Claude Code working directory
-│   ├── .claude/                      # Claude Code metadata/history
-│   ├── temp/                         # Temporary files
-│   └── .session_metadata             # Session info (optional)
-├── {sessionId-2}/                    # Another session sandbox
-│   └── ...
-└── cleanup/                          # Staging for cleanup operations
+sessionId: "demo-abc123"
+    ↓ (creates dedicated container)
+Container: claude-session-demo-abc123
+    ↓ (shared workspace for all requests)
+Workspace: /workspace (persistent across requests)
+    ↓ (automatic session continuation)
+Claude CLI Wrapper: --continue/--resume flags
 ```
 
-### Session Lifecycle
+### Key Design Principles
 
-1. **API Request** → Session ID provided or generated
-2. **Folder Creation** → `/sessions/{sessionId}/` created if not exists
-3. **Claude Code Execution** → `cwd: /sessions/{sessionId}/workspace`
-4. **File Isolation** → All edits contained in session folder
-5. **Future: R2 Archive** → Tar/zip entire session folder to R2
+1. **Session ID Isolation**: Each sessionId gets its own dedicated container instance
+2. **Per Container**: Container named `claude-session-{sessionId}` for true isolation
+3. **One Workspace**: All operations within a session use shared `/workspace` directory
+4. **Auto Continue**: `continueSession: true` automatically maintains context and file state
+5. **No Session Folders**: Eliminated complex `/sessions/{sessionId}/` directory structure
 
-## Implementation Plan
+## Session Lifecycle
 
-### Phase 1: Session Folder Implementation
+### Simplified Flow
 
-#### 1. Enhanced API Interface (Backward Compatible)
+1. **API Request** → sessionId provided (e.g., `"demo-abc123"`)
+2. **Container Selection** → Get/create `claude-session-demo-abc123` container
+3. **Workspace Setup** → Ensure `/workspace` directory exists in container
+4. **Claude Code Execution** → `cwd: /workspace`, `continueSession: true`
+5. **File Persistence** → All files persist across requests in shared workspace
+6. **Context Continuation** → Claude automatically sees previous files and context
+
+## Implementation Details
+
+### API Interface (Updated)
 
 ```typescript
 export interface ClaudeCodeRequest {
   prompt: string
-  sessionId?: string              // Optional: provide to resume/create session
+  sessionId?: string // Session ID for container isolation and auto-continue
   // ... all existing fields unchanged
+  continueSession?: boolean // Auto-enabled when sessionId provided
+  cwd?: string // Overridden to /workspace for sessions
 }
 
 export interface ClaudeCodeResponse {
+  type: 'result'
+  result: string
+  sessionId: string // Session ID used
+  requestId: string
   // ... existing fields
-  sessionId: string               // Session ID (created or provided)
-  sessionCreated: boolean         // true if new session folder created
-  sessionPath: string             # Session folder path (for debugging)
 }
 ```
 
-#### 2. Session ID Strategy
-
-- **Format**: `{timestamp}_{random8}` (e.g., `20241218_a1b2c3d4`)
-- **Generation**: In API handler, not Claude Code
-- **Validation**: Alphanumeric + underscore/hyphen, 15-30 chars
-- **User Control**: Must provide sessionId to resume existing session
-
-#### 3. Core Session Logic
+### Core Session Logic
 
 ```typescript
-function resolveSession(sessionId?: string): SessionInfo {
+function resolveSessionContainer(sessionId?: string): ContainerInfo {
   if (sessionId) {
-    // User provided - use existing or create new folder
-    const sessionPath = `/sessions/${sessionId}/workspace`
-    const created = !folderExists(sessionPath)
-    if (created) createSessionFolder(sessionPath)
-    return { sessionId, sessionPath, created }
+    // Use session-specific container with shared workspace
+    const containerId = `claude-session-${sessionId}`
+    const id = env.CLAUDE_CONTAINER.idFromName(containerId)
+    const container = env.CLAUDE_CONTAINER.get(id)
+    return { container, workspace: '/workspace', sessionId }
   } else {
-    // Generate new session
-    const newSessionId = generateSessionId()
-    const sessionPath = `/sessions/${newSessionId}/workspace`
-    createSessionFolder(sessionPath)
-    return { sessionId: newSessionId, sessionPath, created: true }
+    // Use default container for non-session requests
+    const containerId = 'claude-execution'
+    const id = env.CLAUDE_CONTAINER.idFromName(containerId)
+    const container = env.CLAUDE_CONTAINER.get(id)
+    return { container, workspace: undefined, sessionId: undefined }
   }
 }
 ```
 
-### Files to Modify
-
-#### 1. **`handlers/claude-code.ts`**
-
-- Add `sessionId?` to `ClaudeCodeRequest`
-- Add session metadata to response
-- Pass resolved sessionId to container
-
-#### 2. **`claude-container.ts`**
-
-- Add session folder resolution in `executeClaudeCode()`
-- Override `cwd` parameter: `/sessions/{sessionId}/workspace`
-- Handle session folder creation
-
-#### 3. **`claude-server.js`**
-
-- Add `ensureSessionFolder()` function
-- Generate session ID if not provided
-- Override Claude Code SDK `cwd` option
-- Include session info in responses
-
-#### 4. **New: `SESSION_MANAGEMENT.md`**
-
-- Complete documentation of session architecture
-- API usage examples
-- Phase 1 vs Phase 2 capabilities
-- R2 integration roadmap
-
-### Phase 2: R2 Integration (Future)
-
-#### Session Persistence Strategy
+### Container Session Configuration
 
 ```typescript
-// Archive session to R2
-async function archiveSession(sessionId: string) {
-  const sessionPath = `/sessions/${sessionId}`
-  const tarGz = await createTarGz(sessionPath)
-  await R2_BUCKET.put(`sessions/${sessionId}.tar.gz`, tarGz)
-}
-
-// Restore session from R2
-async function restoreSession(sessionId: string) {
-  const archive = await R2_BUCKET.get(`sessions/${sessionId}.tar.gz`)
-  if (archive) {
-    await extractTarGz(archive, `/sessions/${sessionId}`)
-    return true
+// In ClaudeContainerBridge
+async execute(prompt: string, options: {
+  sessionId: string
+  model?: string
+}): Promise<ReadableStream> {
+  const claudeOptions: ClaudeCodeOptions = {
+    prompt,
+    model: options.model || 'groq/openai/gpt-oss-120b',
+    sessionId: options.sessionId, // Pass sessionId to Claude Code SDK
+    continueSession: true,        // Always try to continue
+    cwd: '/workspace',           // Shared workspace
+    stream: true,
+    verbose: false,
+    maxTurns: 10,
+    permissionMode: 'acceptEdits',
+    systemPrompt: '',            // Empty - let Claude Code use default
   }
-  return false
+
+  // Get session-specific container instance
+  const containerId = `claude-session-${options.sessionId}`
+  const id = this.env.CLAUDE_CONTAINER.idFromName(containerId)
+  const container = this.env.CLAUDE_CONTAINER.get(id)
+
+  // Execute and return stream
+  const response = await container.executeClaudeCode(claudeOptions, envVars)
+  return response.body!
 }
 ```
 
-#### Enhanced Session Flow (Phase 2)
+## Benefits of New Architecture
 
-1. **Session Request** → Check local folder first
-2. **Not Found Locally** → Try restore from R2
-3. **Execute Claude Code** → In session folder
-4. **Archive on Idle** → Upload changes to R2
-5. **Cleanup Local** → Remove local folder after archiving
+### ✅ **Simplified Design**
 
-## Benefits
-
-### ✅ **Simple & Future-Proof**
-
-- Minimal changes to existing codebase
-- No complex Claude Code SDK modifications
-- Clean migration path to R2 persistence
+- **No Session Folders**: Eliminated complex `/sessions/{sessionId}/workspace` structure
+- **Container Isolation**: Each session gets dedicated container for true isolation
+- **Shared Workspace**: Simple `/workspace` path for all operations within a session
+- **Auto-Continue**: Claude CLI wrapper handles session continuation automatically
 
 ### ✅ **Perfect Session Isolation**
 
-- Each session gets dedicated filesystem sandbox
-- No cross-session file contamination
-- Natural working directory separation
+- **Container-Level Isolation**: Each sessionId gets its own container instance
+- **No Cross-Session Contamination**: Containers are completely isolated from each other
+- **Persistent Workspace**: Files created in one request visible in subsequent requests
+- **Natural File State**: Claude automatically sees and works with existing files
 
-### ✅ **R2-Ready Architecture**
+### ✅ **Developer Experience**
 
-- Session folders map directly to R2 archives
-- Simple tar/zip entire folder for persistence
-- Easy restore by extracting archive
+- **Predictable Behavior**: Sessions always continue, files always persist
+- **Simple API**: Just pass sessionId, everything else is automatic
+- **Real-Time Updates**: WebSocket streaming with immediate file state changes
+- **Debugging Friendly**: Each session has its own container for easy inspection
 
-### ✅ **Container Restart Tolerance**
+### ✅ **Operational Benefits**
 
-- Phase 1: Accept session loss on restart (fine for development)
-- Phase 2: Automatic restore from R2 (production ready)
+- **Container Hibernation**: Containers hibernate when idle, preserving file state
+- **Resource Efficient**: Only active sessions consume resources
+- **Scalable Architecture**: Durable Objects provide automatic scaling
+- **Easy Monitoring**: Session-specific containers enable precise debugging
 
-### ✅ **User Control**
+## Removed Complexity
 
-- Explicit session management (no magic auto-continuation)
-- Users must provide sessionId to resume
-- Clear session lifecycle
+### ❌ **No More Session Folders**
 
-## Implementation Priority
+```diff
+- /sessions/
+- ├── {sessionId-1}/
+- │   ├── workspace/
+- │   ├── .claude/
+- │   └── temp/
+- └── {sessionId-2}/
+-     └── workspace/
 
-**High Priority (Phase 1)**:
-
-1. Session folder creation and management
-2. Claude Code working directory override
-3. API interface updates
-4. Session ID generation and validation
-
-**Medium Priority (Phase 2)**:
-
-1. R2 bucket integration
-2. Session archiving and restoration
-3. Automatic cleanup policies
-4. Session size monitoring
-
-**Low Priority (Phase 3)**:
-
-1. Session sharing capabilities
-2. Session analytics and metrics
-3. Advanced cleanup and optimization
-4. Session metadata and tagging
-
-## API Usage Examples
-
-### Create New Session
-
-```javascript
-const response = await fetch('/api/claude-code', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    prompt: 'Create a new Python project',
-    // No sessionId provided - creates new session
-  }),
-})
-
-const result = await response.json()
-console.log(result.sessionId) // "20241218_a1b2c3d4"
-console.log(result.sessionCreated) // true
++ Container: claude-session-{sessionId}
++ Workspace: /workspace (simple and direct)
 ```
 
-### Resume Existing Session
+### ❌ **No More Complex Session Management**
 
-```javascript
-const response = await fetch('/api/claude-code', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    prompt: 'Add a test file to the project',
-    sessionId: '20241218_a1b2c3d4', // Resume previous session
-  }),
-})
+```diff
+- function ensureSessionFolder(sessionId, isTemp) {
+-   const sessionPath = `/sessions/${sessionId}/workspace`
+-   fs.mkdirSync(sessionPath, { recursive: true })
+-   return { workspacePath: sessionPath }
+- }
 
-const result = await response.json()
-console.log(result.sessionId) // "20241218_a1b2c3d4" (same session)
-console.log(result.sessionCreated) // false (existing session)
++ // Simple shared workspace setup
++ const sessionWorkspacePath = '/workspace'
++ fs.mkdirSync(sessionWorkspacePath, { recursive: true })
 ```
 
-### Using Claude Code SDK Style
+### ❌ **No More Temp Sandbox Renaming**
 
-```javascript
-import { query } from '@anthropic-ai/claude-code'
+```diff
+- const sandboxId = generateSandboxId()
+- const { workspacePath } = ensureSessionFolder(sandboxId, true)
+- // ... later rename temp sandbox to permanent session
+- renameSessionFolder(sandboxId, capturedSessionId)
 
-// New session
-for await (const message of query({
-  prompt: 'Create a React component',
-  options: {
-    // No sessionId - creates new session
-  },
-})) {
-  if (message.type === 'result') {
-    console.log('Session ID:', message.sessionId)
-  }
-}
-
-// Resume session
-for await (const message of query({
-  prompt: 'Add TypeScript to the component',
-  options: {
-    sessionId: '20241218_a1b2c3d4', // Resume specific session
-  },
-})) {
-  if (message.type === 'result') {
-    console.log('Continued session:', message.sessionId)
-  }
-}
++ // Direct session container usage
++ const containerId = `claude-session-${sessionId}`
++ // No renaming needed - container persists for entire session
 ```
 
-This architecture provides a clean, simple foundation that naturally evolves into a robust R2-based persistence system while maintaining full backward compatibility.
+## Session Continuation Examples
+
+### Basic Session Flow
+
+```bash
+# Request 1: Create a file (creates container claude-session-demo-abc123)
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Create a hello.py file with print(\"Hello World\")",
+    "sessionId": "demo-abc123"
+  }'
+
+# Request 2: Modify the file (uses existing container and workspace)
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Add error handling to hello.py",
+    "sessionId": "demo-abc123"
+  }'
+
+# Request 3: List files (Claude sees previous files automatically)
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "What files exist in my workspace?",
+    "sessionId": "demo-abc123"
+  }'
+```
+
+### Demo Interface Integration
+
+```javascript
+// Demo UI automatically generates session UUID and passes it
+const sessionId = crypto.randomUUID() // "550e8400-e29b-41d4-a716-446655440000"
+
+// WebSocket connection to session-specific agent
+const ws = new WebSocket(`ws://localhost:8788/demo/ws/${sessionId}`)
+
+// All messages in this session use the same container and workspace
+ws.send(
+  JSON.stringify({
+    type: 'user_message',
+    content: 'Create a React component',
+    model: 'groq/openai/gpt-oss-120b',
+  })
+)
+
+// Later messages in same session see previous files
+ws.send(
+  JSON.stringify({
+    type: 'user_message',
+    content: 'Add TypeScript to the component',
+  })
+)
+```
+
+## Troubleshooting
+
+### Session Continuity Issues
+
+**Symptoms**: Files created in previous requests are not visible
+
+**Debug Steps**:
+
+1. **Verify sessionId consistency**: Ensure same sessionId used across requests
+2. **Check container exists**: `docker ps --filter "name=claude-session-demo-abc123"`
+3. **Inspect workspace**: `docker exec claude-session-demo-abc123 ls -la /workspace`
+4. **Verify auto-continue**: Should be automatically enabled with sessionId
+
+### Container Debugging
+
+```bash
+# Find session-specific containers
+docker ps --filter "name=claude-session-" --format "table {{.Names}}\t{{.Status}}"
+
+# Check workspace contents for specific session
+docker exec claude-session-demo-abc123 ls -la /workspace
+
+# View container logs
+docker logs claude-session-demo-abc123
+
+# Interactive debugging session
+docker exec -it claude-session-demo-abc123 /bin/bash
+```
+
+### Common Issues
+
+**Problem**: Session doesn't continue despite passing sessionId
+**Solution**: Verify `continueSession: true` is set and sessionId format is valid
+
+**Problem**: Files disappear between requests
+**Solution**: Check that the same container is being used (`docker ps` to verify)
+
+**Problem**: Multiple containers for same session
+**Solution**: Review container ID generation logic (`claude-session-${sessionId}`)
+
+## Migration from Old Architecture
+
+### Key Changes Made
+
+1. **Removed Session Folders**: No more `/sessions/{sessionId}/workspace` structure
+2. **Added Container Isolation**: Each sessionId gets dedicated container
+3. **Simplified Workspace**: Always use `/workspace` within container
+4. **Enabled Auto-Continue**: `continueSession: true` by default with sessionId
+5. **Eliminated Temp Sandboxes**: No more temporary folder creation and renaming
+
+### Code Changes Summary
+
+```typescript
+// OLD: Complex session folder management
+const sessionPath = `/sessions/${sessionId}/workspace`
+createSessionFolder(sessionPath)
+
+// NEW: Simple shared workspace with container isolation
+const containerId = `claude-session-${sessionId}`
+const workspace = '/workspace'
+```
+
+This new architecture provides the perfect balance of session isolation (through containers) and simplicity (through shared workspace), resulting in predictable, reliable session continuation behavior.

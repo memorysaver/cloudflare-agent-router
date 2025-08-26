@@ -1,87 +1,25 @@
 // Log startup process
-console.log('🚀 Starting Claude Code SDK server...')
+console.log('🚀 Starting Claude Code CLI server...')
 
 const { Hono } = require('hono')
 const { serve } = require('@hono/node-server')
 const fs = require('fs')
 const path = require('path')
+const { ClaudeCliWrapper } = require('./claude-cli-wrapper')
 
 console.log('📦 Loaded Hono and node-server')
 
-// Try to load Claude Code SDK
-let query
+// Initialize Claude CLI Wrapper (replaces broken SDK)
+let cliWrapper
 try {
-	const claudeCode = require('@anthropic-ai/claude-code')
-	query = claudeCode.query
-	console.log('📦 Loaded Claude Code SDK successfully')
+	cliWrapper = new ClaudeCliWrapper()
+	console.log('📦 Initialized Claude CLI Wrapper successfully')
 } catch (error) {
-	console.error('❌ Failed to load Claude Code SDK:', error.message)
+	console.error('❌ Failed to initialize Claude CLI Wrapper:', error.message)
 	process.exit(1)
 }
 
 const app = new Hono()
-
-// Session folder management
-function ensureSessionFolder(sessionId, isTemp = false) {
-	const sessionPath = path.join('/sessions', sessionId)
-	const workspacePath = path.join(sessionPath, 'workspace')
-
-	try {
-		// Create session directory structure
-		fs.mkdirSync(sessionPath, { recursive: true })
-		fs.mkdirSync(workspacePath, { recursive: true })
-
-		console.log(`📁 Created ${isTemp ? 'temp ' : ''}session folder: ${sessionPath}`)
-		return { sessionPath, workspacePath, sessionId }
-	} catch (error) {
-		console.error(`❌ Failed to create session folder ${sessionPath}:`, error)
-		throw error
-	}
-}
-
-// Generate temp sandbox ID for new sessions
-function generateSandboxId() {
-	const timestamp = Date.now()
-	const random = Math.random().toString(36).substr(2, 9)
-	return `temp_${timestamp}_${random}`
-}
-
-// Rename session folder from sandbox ID to actual session ID
-function renameSessionFolder(fromSandboxId, toSessionId) {
-	const fromPath = path.join('/sessions', fromSandboxId)
-	const toPath = path.join('/sessions', toSessionId)
-
-	try {
-		// Check if source folder exists
-		if (!fs.existsSync(fromPath)) {
-			console.warn(`⚠️ Source folder not found for rename: ${fromPath}`)
-			return false
-		}
-
-		// Check if target folder already exists
-		if (fs.existsSync(toPath)) {
-			console.warn(`⚠️ Target folder already exists: ${toPath}`)
-			return false
-		}
-
-		// Perform atomic rename
-		fs.renameSync(fromPath, toPath)
-		console.log(`✅ Renamed session folder: ${fromSandboxId} → ${toSessionId}`)
-		return true
-	} catch (error) {
-		console.error(`❌ Failed to rename session folder ${fromSandboxId} → ${toSessionId}:`, error)
-
-		// Fallback: Create symlink if rename fails
-		try {
-			fs.symlinkSync(fromPath, toPath, 'dir')
-			console.log(`🔗 Created symlink fallback: ${fromSandboxId} → ${toSessionId}`)
-			return true
-		} catch (symlinkError) {
-			console.error(`❌ Symlink fallback failed:`, symlinkError)
-			return false
-		}
-	}
-}
 
 // Health check endpoint
 app.get('/', (c) => {
@@ -163,43 +101,41 @@ app.post('/', async (c) => {
 			additionalArgs,
 		} = requestBody
 
-		// Ultra-Simple Session Management with Temp Sandbox Support
-		let sessionWorkspacePath = cwd || process.cwd()
-		let sessionInfo = { sessionId: null, sessionPath: null, sandboxId: null, isTemp: false }
+		// Simplified Session Management - Use Shared Workspace
+		let sessionWorkspacePath = cwd || '/workspace'
+		console.log(`📁 Using shared workspace: ${sessionWorkspacePath}`)
 
-		if (sessionId) {
-			// Existing session: create folder and use it
-			console.log(`🗂️ Using existing session: ${sessionId}`)
-			const { sessionPath, workspacePath } = ensureSessionFolder(sessionId, false)
-			sessionWorkspacePath = workspacePath
-			sessionInfo = { sessionId, sessionPath, sandboxId: null, isTemp: false }
-			console.log(`📁 Session workspace path: ${sessionWorkspacePath}`)
-		} else {
-			// New session: create temp sandbox folder
-			const sandboxId = generateSandboxId()
-			console.log(`🆕 Creating new temp sandbox: ${sandboxId}`)
-			const { sessionPath, workspacePath } = ensureSessionFolder(sandboxId, true)
-			sessionWorkspacePath = workspacePath
-			sessionInfo = { sessionId: null, sessionPath, sandboxId, isTemp: true }
-			console.log(`📁 Temp sandbox workspace path: ${sessionWorkspacePath}`)
+		// Ensure shared workspace directory exists
+		const fs = require('fs')
+		try {
+			fs.mkdirSync(sessionWorkspacePath, { recursive: true })
+			console.log(`📁 Shared workspace ready: ${sessionWorkspacePath}`)
+		} catch (error) {
+			console.warn(`⚠️ Workspace directory creation warning:`, error.message)
 		}
 
 		// ULTRA-SIMPLE: Direct request-to-SDK mapping (following official docs pattern)
 		const options = {
+			prompt: prompt, // Add the missing prompt parameter
 			systemPrompt:
 				systemPrompt && systemPrompt.trim() !== ''
 					? systemPrompt
 					: `You are a helpful assistant. [Request ID: ${requestId}]`,
 			maxTurns: maxTurns,
+			stream: stream,
+			sessionId: sessionId,
 			// Critical SDK defaults for proper function
 			allowedTools: allowedTools || undefined, // undefined = all tools enabled
 			permissionMode: permissionMode || 'acceptEdits',
 			cwd: sessionWorkspacePath,
 			pathToClaudeCodeExecutable: pathToClaudeCodeExecutable || undefined, // undefined = SDK manages
-			// Session management - use resumeSessionId for specific sessions, continueSession for most recent
-			...(sessionId && { resumeSessionId: sessionId }),
-			// Only use continueSession when no specific sessionId is provided - don't pass it at all when using resumeSessionId
-			...(sessionId ? {} : { continueSession: continueSession || false }),
+			// Session management - use resumeSessionId if provided, otherwise continueSession
+			continueSession: resumeSessionId
+				? false
+				: continueSession !== undefined
+					? continueSession
+					: true,
+			resumeSessionId: resumeSessionId,
 		}
 
 		// Add optional parameters directly from request (no env var fallbacks)
@@ -210,236 +146,48 @@ app.post('/', async (c) => {
 		if (executable) options.executable = executable
 		if (executableArgs || additionalArgs) options.executableArgs = executableArgs || additionalArgs
 
-		console.log('🤖 Claude Code SDK Options:')
+		console.log('🤖 Claude CLI Options:')
 		console.log(JSON.stringify(options, null, 2))
 
-		if (stream) {
-			// Streaming response
-			console.log('🌊 Starting streaming response')
-			return new Response(
-				new ReadableStream({
-					async start(controller) {
-						try {
-							let capturedSessionId = sessionInfo.sessionId // Use existing sessionId if provided
-							let finalResultMessage = null // Buffer for final result message
+		// Prepare environment variables (API configuration only)
+		const envVars = {
+			ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
+			ANTHROPIC_BASE_URL:
+				process.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
+		}
 
-							// Create AbortController for this request
-							const abortController = new AbortController()
+		// Add optional API key if provided
+		if (process.env.ANTHROPIC_API_KEY) {
+			envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
+		}
 
-							// Query parameters for Claude Code SDK
-							const queryParams = {
-								prompt,
-								abortController,
-								options: {
-									...options,
-								},
-							}
+		console.log(`🤖 Using LiteLLM router: ${envVars.ANTHROPIC_BASE_URL}`)
+		console.log(`🤖 Using model: ${options.model}`)
+		console.log(`🤖 Auth mode: ${envVars.ANTHROPIC_AUTH_TOKEN}`)
+		console.log(`🤖 Request contains ${Object.keys(requestBody).length} parameters`)
 
-							console.log('🚀 Starting Claude Code SDK query with parameters:')
-							console.log(JSON.stringify(queryParams, null, 2))
+		// Execute using Claude CLI Wrapper (replaces broken SDK)
+		console.log(`🤖 Executing Claude CLI Wrapper...`)
+		const response = cliWrapper.execute(options, envVars) // No await for streaming!
 
-							for await (const message of query(queryParams)) {
-								console.log('📤 SDK Message:', message.type, message.subtype || '')
+		// Determine if streaming based on outputFormat or deprecated stream flag
+		const isStreaming =
+			options.outputFormat === 'stream-json' ||
+			(options.outputFormat === undefined && options.stream)
 
-								// Capture session ID from init message (don't rename yet)
-								if (message.type === 'system' && message.subtype === 'init') {
-									capturedSessionId = message.session_id
-									console.log(`🆔 Captured Session ID: ${capturedSessionId}`)
-								}
-
-								// Log result messages for debugging
-								if (message.type === 'result' && verbose) {
-									console.log(`🔍 Result:`, JSON.stringify(message, null, 2))
-								}
-
-								// Stream different message types (except final result)
-								let data
-								if (message.type === 'assistant') {
-									data =
-										JSON.stringify({
-											type: 'assistant',
-											content: message.content,
-										}) + '\n'
-								} else if (message.type === 'tool_call') {
-									data =
-										JSON.stringify({
-											type: 'tool_call',
-											tool: message.tool,
-											input: message.input,
-										}) + '\n'
-								} else if (message.type === 'tool_result') {
-									data =
-										JSON.stringify({
-											type: 'tool_result',
-											tool: message.tool,
-											result: message.result,
-										}) + '\n'
-								} else if (message.type === 'result') {
-									// Buffer final result message - don't stream yet
-									finalResultMessage = message
-									continue // Skip streaming this message
-								}
-
-								if (data) {
-									controller.enqueue(new TextEncoder().encode(data))
-								}
-							}
-
-							// SDK completed - now handle sandbox renaming before final response
-							console.log('🔄 SDK execution completed, processing session management...')
-
-							// Handle temp sandbox renaming for new sessions
-							if (!sessionInfo.sessionId && sessionInfo.isTemp && capturedSessionId) {
-								console.log(
-									`🔄 Renaming temp sandbox: ${sessionInfo.sandboxId} → ${capturedSessionId}`
-								)
-								const renameSuccess = renameSessionFolder(sessionInfo.sandboxId, capturedSessionId)
-
-								if (renameSuccess) {
-									// Update session info with final paths
-									const finalSessionPath = path.join('/sessions', capturedSessionId)
-									sessionInfo = {
-										sessionId: capturedSessionId,
-										sessionPath: finalSessionPath,
-										sandboxId: sessionInfo.sandboxId,
-										isTemp: false,
-										renamed: true,
-									}
-									console.log(`✅ Session folder renamed successfully`)
-								} else {
-									console.log(`⚠️ Session folder rename failed, keeping temp folder`)
-									sessionInfo.sessionId = capturedSessionId // Update session ID but keep temp folder
-									sessionInfo.renamed = false
-								}
-							}
-
-							// Stream the final result with correct session info
-							if (finalResultMessage) {
-								const finalData =
-									JSON.stringify({
-										type: 'result',
-										result: finalResultMessage.result,
-										sessionId: capturedSessionId,
-										sessionPath: sessionInfo.sessionPath,
-										// Additional session metadata for temp sandbox tracking
-										...(sessionInfo.sandboxId && { originalSandboxId: sessionInfo.sandboxId }),
-										...(sessionInfo.renamed !== undefined && { renamed: sessionInfo.renamed }),
-										...(sessionInfo.isTemp !== undefined && { wasTemp: sessionInfo.isTemp }),
-									}) + '\n'
-
-								controller.enqueue(new TextEncoder().encode(finalData))
-							}
-
-							console.log('✅ Streaming completed for request:', requestId)
-							controller.close()
-						} catch (error) {
-							console.error('❌ Streaming error for request:', requestId, error)
-							const errorData =
-								JSON.stringify({
-									type: 'error',
-									error: error.message,
-									requestId: requestId,
-								}) + '\n'
-							controller.enqueue(new TextEncoder().encode(errorData))
-							controller.close()
-						}
-					},
-				}),
-				{
-					headers: {
-						'Content-Type': 'text/plain',
-						'Transfer-Encoding': 'chunked',
-					},
-				}
-			)
+		if (isStreaming) {
+			console.log(`🤖 Returning streaming response immediately (no await)`)
+			// Return streaming response immediately - don't await!
+			return response
 		} else {
-			// Non-streaming response
-			console.log('📝 Starting non-streaming response')
-			const messages = []
-			let capturedSessionId = sessionInfo.sessionId // Use existing sessionId if provided
-
-			// Create AbortController for this request
-			const abortController = new AbortController()
-
-			// Query parameters for Claude Code SDK
-			const queryParams = {
-				prompt,
-				abortController,
-				options: {
-					...options,
-				},
-			}
-
-			console.log('🚀 Starting Claude Code SDK query with parameters:')
-			console.log(JSON.stringify(queryParams, null, 2))
-
-			for await (const message of query(queryParams)) {
-				console.log('📤 SDK Message:', message.type, message.subtype || '')
-
-				// Capture session ID from init message (don't rename yet)
-				if (message.type === 'system' && message.subtype === 'init') {
-					capturedSessionId = message.session_id
-					console.log(`🆔 Captured Session ID: ${capturedSessionId}`)
-				}
-
-				// Log result messages for debugging
-				if (message.type === 'result' && verbose) {
-					console.log(`🔍 Result:`, JSON.stringify(message, null, 2))
-				}
-
-				messages.push(message)
-			}
-
-			// SDK completed - now handle sandbox renaming before response
-			console.log('🔄 SDK execution completed, processing session management...')
-
-			// Handle temp sandbox renaming for new sessions
-			if (!sessionInfo.sessionId && sessionInfo.isTemp && capturedSessionId) {
-				console.log(`🔄 Renaming temp sandbox: ${sessionInfo.sandboxId} → ${capturedSessionId}`)
-				const renameSuccess = renameSessionFolder(sessionInfo.sandboxId, capturedSessionId)
-
-				if (renameSuccess) {
-					// Update session info with final paths
-					const finalSessionPath = path.join('/sessions', capturedSessionId)
-					sessionInfo = {
-						sessionId: capturedSessionId,
-						sessionPath: finalSessionPath,
-						sandboxId: sessionInfo.sandboxId,
-						isTemp: false,
-						renamed: true,
-					}
-					console.log(`✅ Session folder renamed successfully`)
-				} else {
-					console.log(`⚠️ Session folder rename failed, keeping temp folder`)
-					sessionInfo.sessionId = capturedSessionId // Update session ID but keep temp folder
-					sessionInfo.renamed = false
-				}
-			}
-
-			// Find the final result
-			const result = messages.find((m) => m.type === 'result')
-
-			console.log('✅ Non-streaming completed for request:', requestId)
-			console.log(`🔍 Session: ${capturedSessionId}, Result length: ${result?.result?.length || 0}`)
-
-			return c.json({
-				type: 'result',
-				result: result?.result || 'No result found',
-				sessionId: capturedSessionId,
-				sessionPath: sessionInfo.sessionPath,
-				requestId: requestId,
-				messages: verbose ? messages : undefined,
-				// Include metadata if available
-				...(result?.total_cost_usd && { cost_usd: result.total_cost_usd }),
-				...(result?.duration_ms && { duration_ms: result.duration_ms }),
-				// Additional session metadata for temp sandbox tracking
-				...(sessionInfo.sandboxId && { originalSandboxId: sessionInfo.sandboxId }),
-				...(sessionInfo.renamed && { renamed: sessionInfo.renamed }),
-				...(sessionInfo.isTemp !== undefined && { wasTemp: sessionInfo.isTemp }),
-			})
+			console.log(`🤖 Awaiting non-streaming response completion`)
+			// For non-streaming, await the complete response
+			const completedResponse = await response
+			console.log(`🤖 CLI Wrapper response status: ${completedResponse.status}`)
+			return completedResponse
 		}
 	} catch (error) {
-		console.error('❌ Claude Code SDK server error:', error)
+		console.error('❌ Claude CLI Wrapper server error:', error)
 		return c.json(
 			{
 				type: 'error',
