@@ -171,7 +171,7 @@ app.post('/', async (c) => {
 		const response = cliWrapper.execute(options, envVars) // No await for streaming!
 
 		// Determine if streaming based on outputFormat or deprecated stream flag
-		const isStreaming = 
+		const isStreaming =
 			options.outputFormat === 'stream-json' ||
 			(options.outputFormat === undefined && options.stream)
 

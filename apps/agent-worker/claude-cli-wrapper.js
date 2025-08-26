@@ -130,7 +130,7 @@ class ClaudeCliWrapper {
 			outputFormat = 'stream-json'
 		}
 		flags.push('--output-format', outputFormat)
-		
+
 		// Claude CLI requirement: --print mode with --output-format=stream-json requires --verbose
 		if (outputFormat === 'stream-json' && !options.verbose) {
 			console.log('🚀 STREAMING: Auto-enabling --verbose for stream-json output format')
@@ -169,13 +169,13 @@ class ClaudeCliWrapper {
 	 */
 	async executeStreaming(flags, env, httpSessionId, options) {
 		const self = this // Capture correct 'this' reference for use inside ReadableStream
-		
+
 		console.log('🚀 STREAMING: Starting executeStreaming method')
 		console.log('🚀 STREAMING: Flags:', flags.join(' '))
 		console.log('🚀 STREAMING: Environment PWD:', env.PWD)
 		console.log('🚀 STREAMING: HTTP Session ID:', httpSessionId)
 		console.log('🚀 STREAMING: Options:', JSON.stringify(options, null, 2))
-		
+
 		return new Response(
 			new ReadableStream({
 				async start(controller) {
@@ -219,7 +219,7 @@ class ClaudeCliWrapper {
 						console.log('🚀 STREAMING: Command: claude', flags.join(' '))
 						console.log('🚀 STREAMING: Working directory:', env.PWD)
 						console.log('🚀 STREAMING: Environment variables:')
-						Object.keys(env).forEach(key => {
+						Object.keys(env).forEach((key) => {
 							if (key.includes('ANTHROPIC') || key === 'PWD') {
 								console.log(`  ${key}: ${env[key]}`)
 							}
@@ -291,7 +291,10 @@ class ClaudeCliWrapper {
 
 						console.log('🚀 STREAMING: Setting up readline event handlers')
 						rl.on('line', (line) => {
-							console.log('🚀 STREAMING: Received line from stdout:', line.substring(0, 100) + (line.length > 100 ? '...' : ''))
+							console.log(
+								'🚀 STREAMING: Received line from stdout:',
+								line.substring(0, 100) + (line.length > 100 ? '...' : '')
+							)
 							if (!line.trim()) {
 								console.log('🚀 STREAMING: Skipping empty line')
 								return
@@ -344,7 +347,7 @@ class ClaudeCliWrapper {
 						claudeProcess.stderr.on('data', (data) => {
 							console.error('🚀 STREAMING: STDERR:', data.toString())
 						})
-						
+
 						console.log('🚀 STREAMING: All event handlers set up, waiting for claude CLI output...')
 					} catch (error) {
 						console.error('🚀 STREAMING: ❌ CLI streaming setup error:', error)

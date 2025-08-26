@@ -7,7 +7,7 @@ The `test-comprehensive.sh` script provides comprehensive testing of both REST A
 ## Features
 
 - ✅ **REST API Testing**: Non-streaming, streaming, file operations, session continuity, tool restrictions
-- ✅ **WebSocket Testing**: Basic operations, file creation, session continuity  
+- ✅ **WebSocket Testing**: Basic operations, file creation, session continuity
 - ✅ **Cross-Interface Testing**: File persistence across REST ↔ WebSocket
 - ✅ **Resource Constraint Detection**: Handles container timeout issues gracefully
 - ✅ **Comprehensive Reporting**: Color-coded results with performance metrics
@@ -26,6 +26,7 @@ The `test-comprehensive.sh` script provides comprehensive testing of both REST A
 ## Usage
 
 ### Basic Usage
+
 ```bash
 # Run all tests with default settings
 ./test-comprehensive.sh
@@ -42,43 +43,44 @@ The `test-comprehensive.sh` script provides comprehensive testing of both REST A
 
 ### Command Line Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--server URL` | Server URL to test | `http://localhost:8788` |
-| `--timeout-short N` | Short timeout (seconds) | `30` |
-| `--timeout-long N` | Long timeout (seconds) | `60` |
-| `--verbose` | Enable verbose logging | `false` |
-| `--help` | Show help message | - |
+| Option              | Description             | Default                 |
+| ------------------- | ----------------------- | ----------------------- |
+| `--server URL`      | Server URL to test      | `http://localhost:8788` |
+| `--timeout-short N` | Short timeout (seconds) | `30`                    |
+| `--timeout-long N`  | Long timeout (seconds)  | `60`                    |
+| `--verbose`         | Enable verbose logging  | `false`                 |
+| `--help`            | Show help message       | -                       |
 
 ## Test Categories
 
 ### 1. REST API Tests (`/claude-code`)
 
-| Test | Description | Expected Result |
-|------|-------------|----------------|
-| **Non-streaming Math** | Simple calculation with JSON output | ✅ Fast response (~10s) |
-| **Streaming Math** | Simple calculation with streaming output | ✅ Works but may be slower |
-| **File Creation** | Create file in workspace | ✅ File persistence |
-| **Session Continuity** | Read file from previous test | ✅ Session state maintained |
-| **Tool Restrictions** | Math with `allowedTools: []` | ✅ Works without tools |
+| Test                   | Description                              | Expected Result             |
+| ---------------------- | ---------------------------------------- | --------------------------- |
+| **Non-streaming Math** | Simple calculation with JSON output      | ✅ Fast response (~10s)     |
+| **Streaming Math**     | Simple calculation with streaming output | ✅ Works but may be slower  |
+| **File Creation**      | Create file in workspace                 | ✅ File persistence         |
+| **Session Continuity** | Read file from previous test             | ✅ Session state maintained |
+| **Tool Restrictions**  | Math with `allowedTools: []`             | ✅ Works without tools      |
 
 ### 2. WebSocket Tests (`/demo/ws/:sessionId`)
 
-| Test | Description | Expected Behavior |
-|------|-------------|------------------|
-| **Basic Math** | Simple calculation via WebSocket | ⚠️ May timeout due to container resources |
-| **File Creation** | Create file via WebSocket | ⚠️ May timeout due to container resources |
-| **Session Continuity** | Read file from previous WebSocket test | ⚠️ Depends on previous test success |
+| Test                   | Description                            | Expected Behavior                         |
+| ---------------------- | -------------------------------------- | ----------------------------------------- |
+| **Basic Math**         | Simple calculation via WebSocket       | ⚠️ May timeout due to container resources |
+| **File Creation**      | Create file via WebSocket              | ⚠️ May timeout due to container resources |
+| **Session Continuity** | Read file from previous WebSocket test | ⚠️ Depends on previous test success       |
 
 ### 3. Cross-Interface Tests
 
-| Test | Description | Expected Behavior |
-|------|-------------|------------------|
+| Test                 | Description                              | Expected Behavior             |
+| -------------------- | ---------------------------------------- | ----------------------------- |
 | **REST → WebSocket** | Create file via REST, read via WebSocket | ⚠️ WebSocket part may timeout |
 
 ## Expected Results
 
 ### Normal Operation
+
 ```
 ==============================================
   COMPREHENSIVE CLAUDE CODE TEST RESULTS
@@ -92,7 +94,7 @@ rest_session_continuity             PASS     7.0s     File content retrieved cor
 rest_streaming_math                 PASS     12.0s    Correct answer: 10
 rest_tool_restrictions              PASS     10.0s    Works without tools
 websocket_basic_math                TIMEOUT  0.0s     WebSocket connected but no response (container resources)
-websocket_continuity                TIMEOUT  0.0s     WebSocket connected but no response (container resources)  
+websocket_continuity                TIMEOUT  0.0s     WebSocket connected but no response (container resources)
 websocket_file_creation             TIMEOUT  0.0s     WebSocket connected but no response (container resources)
 cross_rest_to_ws                    TIMEOUT  0.0s     WebSocket connected but no response (container resources)
 
@@ -116,6 +118,7 @@ Success Rate: 55.5%
 ### Common Issues
 
 1. **"bash 4+ required"**
+
    ```bash
    # macOS - install newer bash
    brew install bash
@@ -123,6 +126,7 @@ Success Rate: 55.5%
    ```
 
 2. **"websocat not found"**
+
    ```bash
    # Install websocat
    brew install websocat  # macOS
@@ -130,6 +134,7 @@ Success Rate: 55.5%
    ```
 
 3. **"Server not responding"**
+
    ```bash
    # Make sure development server is running
    just dev
@@ -145,17 +150,19 @@ Success Rate: 55.5%
 ### Performance Tuning
 
 For slower environments, adjust timeouts:
+
 ```bash
 # Conservative timeouts for resource-constrained environments
 ./test-comprehensive.sh --timeout-short 60 --timeout-long 120
 
-# Aggressive timeouts for fast environments  
+# Aggressive timeouts for fast environments
 ./test-comprehensive.sh --timeout-short 15 --timeout-long 30
 ```
 
 ## Integration
 
 ### CI/CD Pipeline
+
 ```yaml
 # Example GitHub Actions step
 - name: Run Comprehensive Tests
@@ -165,6 +172,7 @@ For slower environments, adjust timeouts:
 ```
 
 ### Development Workflow
+
 ```bash
 # After making changes, run tests
 just dev  # Start server
