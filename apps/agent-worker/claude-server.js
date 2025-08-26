@@ -1,21 +1,21 @@
 // Log startup process
-console.log('🚀 Starting Claude Code SDK server...')
+console.log('🚀 Starting Claude Code CLI server...')
 
 const { Hono } = require('hono')
 const { serve } = require('@hono/node-server')
 const fs = require('fs')
 const path = require('path')
+const { ClaudeCliWrapper } = require('./claude-cli-wrapper')
 
 console.log('📦 Loaded Hono and node-server')
 
-// Try to load Claude Code SDK
-let query
+// Initialize Claude CLI Wrapper (replaces broken SDK)
+let cliWrapper
 try {
-	const claudeCode = require('@anthropic-ai/claude-code')
-	query = claudeCode.query
-	console.log('📦 Loaded Claude Code SDK successfully')
+	cliWrapper = new ClaudeCliWrapper()
+	console.log('📦 Initialized Claude CLI Wrapper successfully')
 } catch (error) {
-	console.error('❌ Failed to load Claude Code SDK:', error.message)
+	console.error('❌ Failed to initialize Claude CLI Wrapper:', error.message)
 	process.exit(1)
 }
 
@@ -104,7 +104,7 @@ app.post('/', async (c) => {
 		// Simplified Session Management - Use Shared Workspace
 		let sessionWorkspacePath = cwd || '/workspace'
 		console.log(`📁 Using shared workspace: ${sessionWorkspacePath}`)
-		
+
 		// Ensure shared workspace directory exists
 		const fs = require('fs')
 		try {
@@ -116,19 +116,25 @@ app.post('/', async (c) => {
 
 		// ULTRA-SIMPLE: Direct request-to-SDK mapping (following official docs pattern)
 		const options = {
+			prompt: prompt, // Add the missing prompt parameter
 			systemPrompt:
 				systemPrompt && systemPrompt.trim() !== ''
 					? systemPrompt
 					: `You are a helpful assistant. [Request ID: ${requestId}]`,
 			maxTurns: maxTurns,
+			stream: stream,
+			sessionId: sessionId,
 			// Critical SDK defaults for proper function
 			allowedTools: allowedTools || undefined, // undefined = all tools enabled
 			permissionMode: permissionMode || 'acceptEdits',
 			cwd: sessionWorkspacePath,
 			pathToClaudeCodeExecutable: pathToClaudeCodeExecutable || undefined, // undefined = SDK manages
-			// Session management - pass sessionId to SDK for continuity
-			sessionId: sessionId,
-			continueSession: continueSession !== false, // Default to true unless explicitly false
+			// Session management - use resumeSessionId if provided, otherwise continueSession
+			continueSession: resumeSessionId
+				? false
+				: continueSession !== undefined
+					? continueSession
+					: true,
 			resumeSessionId: resumeSessionId,
 		}
 
@@ -140,175 +146,34 @@ app.post('/', async (c) => {
 		if (executable) options.executable = executable
 		if (executableArgs || additionalArgs) options.executableArgs = executableArgs || additionalArgs
 
-		console.log('🤖 Claude Code SDK Options:')
+		console.log('🤖 Claude CLI Options:')
 		console.log(JSON.stringify(options, null, 2))
 
-		if (stream) {
-			// Streaming response
-			console.log('🌊 Starting streaming response')
-			return new Response(
-				new ReadableStream({
-					async start(controller) {
-						try {
-							let capturedSessionId = null // Will be captured from Claude Code SDK
-							let finalResultMessage = null // Buffer for final result message
-
-							// Create AbortController for this request
-							const abortController = new AbortController()
-
-							// Query parameters for Claude Code SDK
-							const queryParams = {
-								prompt,
-								abortController,
-								options: {
-									...options,
-								},
-							}
-
-							console.log('🚀 Starting Claude Code SDK query with parameters:')
-							console.log(JSON.stringify(queryParams, null, 2))
-
-							for await (const message of query(queryParams)) {
-								console.log('📤 SDK Message:', message.type, message.subtype || '')
-
-								// Capture session ID from init message (don't rename yet)
-								if (message.type === 'system' && message.subtype === 'init') {
-									capturedSessionId = message.session_id
-									console.log(`🆔 Captured Session ID: ${capturedSessionId}`)
-								}
-
-								// Log result messages for debugging
-								if (message.type === 'result' && verbose) {
-									console.log(`🔍 Result:`, JSON.stringify(message, null, 2))
-								}
-
-								// Stream different message types (except final result)
-								let data
-								if (message.type === 'assistant') {
-									data =
-										JSON.stringify({
-											type: 'assistant',
-											content: message.content,
-										}) + '\n'
-								} else if (message.type === 'tool_call') {
-									data =
-										JSON.stringify({
-											type: 'tool_call',
-											tool: message.tool,
-											input: message.input,
-										}) + '\n'
-								} else if (message.type === 'tool_result') {
-									data =
-										JSON.stringify({
-											type: 'tool_result',
-											tool: message.tool,
-											result: message.result,
-										}) + '\n'
-								} else if (message.type === 'result') {
-									// Buffer final result message - don't stream yet
-									finalResultMessage = message
-									continue // Skip streaming this message
-								}
-
-								if (data) {
-									controller.enqueue(new TextEncoder().encode(data))
-								}
-							}
-
-							// SDK completed
-							console.log('✅ SDK execution completed')
-
-							// Stream the final result
-							if (finalResultMessage) {
-								const finalData =
-									JSON.stringify({
-										type: 'result',
-										result: finalResultMessage.result,
-										sessionId: capturedSessionId,
-									}) + '\n'
-
-								controller.enqueue(new TextEncoder().encode(finalData))
-							}
-
-							console.log('✅ Streaming completed for request:', requestId)
-							controller.close()
-						} catch (error) {
-							console.error('❌ Streaming error for request:', requestId, error)
-							const errorData =
-								JSON.stringify({
-									type: 'error',
-									error: error.message,
-									requestId: requestId,
-								}) + '\n'
-							controller.enqueue(new TextEncoder().encode(errorData))
-							controller.close()
-						}
-					},
-				}),
-				{
-					headers: {
-						'Content-Type': 'text/plain',
-						'Transfer-Encoding': 'chunked',
-					},
-				}
-			)
-		} else {
-			// Non-streaming response
-			console.log('📝 Starting non-streaming response')
-			const messages = []
-			let capturedSessionId = null // Will be captured from Claude Code SDK
-
-			// Create AbortController for this request
-			const abortController = new AbortController()
-
-			// Query parameters for Claude Code SDK
-			const queryParams = {
-				prompt,
-				abortController,
-				options: {
-					...options,
-				},
-			}
-
-			console.log('🚀 Starting Claude Code SDK query with parameters:')
-			console.log(JSON.stringify(queryParams, null, 2))
-
-			for await (const message of query(queryParams)) {
-				console.log('📤 SDK Message:', message.type, message.subtype || '')
-
-				// Capture session ID from init message (don't rename yet)
-				if (message.type === 'system' && message.subtype === 'init') {
-					capturedSessionId = message.session_id
-					console.log(`🆔 Captured Session ID: ${capturedSessionId}`)
-				}
-
-				// Log result messages for debugging
-				if (message.type === 'result' && verbose) {
-					console.log(`🔍 Result:`, JSON.stringify(message, null, 2))
-				}
-
-				messages.push(message)
-			}
-
-			// Find the final result
-			const result = messages.find((m) => m.type === 'result')
-
-			console.log('✅ Non-streaming completed for request:', requestId)
-			console.log(`🔍 Session: ${capturedSessionId}, Result length: ${result?.result?.length || 0}`)
-
-			return c.json({
-				type: 'result',
-				result: result?.result || 'No result found',
-				sessionId: capturedSessionId,
-				requestId: requestId,
-				messages: verbose ? messages : undefined,
-				// Include metadata if available
-				...(result?.total_cost_usd && { cost_usd: result.total_cost_usd }),
-				...(result?.duration_ms && { duration_ms: result.duration_ms }),
-			})
+		// Prepare environment variables (API configuration only)
+		const envVars = {
+			ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
+			ANTHROPIC_BASE_URL:
+				process.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
 		}
+
+		// Add optional API key if provided
+		if (process.env.ANTHROPIC_API_KEY) {
+			envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
+		}
+
+		console.log(`🤖 Using LiteLLM router: ${envVars.ANTHROPIC_BASE_URL}`)
+		console.log(`🤖 Using model: ${options.model}`)
+		console.log(`🤖 Auth mode: ${envVars.ANTHROPIC_AUTH_TOKEN}`)
+		console.log(`🤖 Request contains ${Object.keys(requestBody).length} parameters`)
+
+		// Execute using Claude CLI Wrapper (replaces broken SDK)
+		console.log(`🤖 Executing Claude CLI Wrapper...`)
+		const response = await cliWrapper.execute(options, envVars)
+
+		console.log(`🤖 CLI Wrapper response status: ${response.status}`)
+		return response
 	} catch (error) {
-		console.error('❌ Claude Code SDK server error:', error)
+		console.error('❌ Claude CLI Wrapper server error:', error)
 		return c.json(
 			{
 				type: 'error',

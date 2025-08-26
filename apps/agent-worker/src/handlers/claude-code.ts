@@ -2,12 +2,21 @@ import type { Context } from 'hono'
 import type { App } from '../context'
 
 export interface ClaudeCodeRequest {
-	// Required
-	prompt: string
+	// Required (prompt for text format, messages for stream-json format)
+	prompt?: string
+	messages?: Array<{
+		role: 'user' | 'assistant'
+		content: Array<{
+			type: 'text'
+			text: string
+		}>
+	}>
 
-	// API Configuration
+	// Input/Output Format Configuration
+	inputFormat?: 'text' | 'stream-json' // Default: "text"
+	outputFormat?: 'text' | 'json' | 'stream-json' // Default: "json"
 	model?: string // Default: "groq/openai/gpt-oss-120b"
-	stream?: boolean // Default: true
+	stream?: boolean // Default: true (deprecated - use outputFormat instead)
 	verbose?: boolean // Default: false
 
 	// Claude Code SDK Core Options
@@ -29,7 +38,7 @@ export interface ClaudeCodeRequest {
 	permissionPromptTool?: string // Default: undefined
 
 	// MCP Configuration
-	mcpConfig?: string // Default: undefined
+	mcpConfig?: object // Default: undefined (JSON object that will be saved as .mcp.json)
 
 	// Runtime Configuration
 	cwd?: string // Default: undefined
@@ -69,15 +78,33 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			)
 		}
 
-		// Validate required fields
-		if (!requestBody.prompt) {
-			return c.json<ClaudeCodeError>(
-				{
-					error: 'Missing prompt',
-					message: 'Request must include a prompt field',
-				},
-				400
-			)
+		// Validate required fields based on input format
+		const inputFormat = requestBody.inputFormat || 'text'
+
+		if (inputFormat === 'text') {
+			if (!requestBody.prompt) {
+				return c.json<ClaudeCodeError>(
+					{
+						error: 'Missing prompt',
+						message: 'Request must include a prompt field when using text input format',
+					},
+					400
+				)
+			}
+		} else if (inputFormat === 'stream-json') {
+			if (
+				!requestBody.messages ||
+				!Array.isArray(requestBody.messages) ||
+				requestBody.messages.length === 0
+			) {
+				return c.json<ClaudeCodeError>(
+					{
+						error: 'Missing messages',
+						message: 'Request must include a messages array when using stream-json input format',
+					},
+					400
+				)
+			}
 		}
 
 		// Check container availability
@@ -91,9 +118,14 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 			)
 		}
 
-		console.log(
-			`🤖 Processing Claude Code request with prompt: "${requestBody.prompt.substring(0, 50)}..."`
-		)
+		// Log request info based on input format
+		if (inputFormat === 'text' && requestBody.prompt) {
+			console.log(
+				`🤖 Processing Claude Code request with prompt: "${requestBody.prompt.substring(0, 50)}..."`
+			)
+		} else if (inputFormat === 'stream-json' && requestBody.messages) {
+			console.log(`🤖 Processing Claude Code request with ${requestBody.messages.length} messages`)
+		}
 
 		// ULTRA-SIMPLE Session Management: Apply logic in Worker before container
 		let sessionWorkspacePath = requestBody.cwd
@@ -110,12 +142,18 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 
 		// Prepare complete Claude Code options with defaults
 		const options: ClaudeCodeRequest = {
-			// Required
+			// Input content (based on format)
 			prompt: requestBody.prompt,
+			messages: requestBody.messages,
+
+			// Format Configuration
+			inputFormat: inputFormat,
+			outputFormat:
+				requestBody.outputFormat || (requestBody.stream !== false ? 'stream-json' : 'json'),
 
 			// API Configuration with user's preferred defaults
 			model: requestBody.model || 'groq/openai/gpt-oss-120b',
-			stream: requestBody.stream !== false, // Default to true
+			stream: requestBody.stream !== false, // Keep for compatibility
 			verbose: requestBody.verbose || false,
 
 			// Claude Code SDK Core Options
@@ -129,7 +167,7 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 
 			// Session Management - simplified for shared workspace architecture
 			sessionId: requestBody.sessionId,
-			continueSession: requestBody.sessionId ? true : (requestBody.continueSession || false),
+			continueSession: requestBody.sessionId ? true : requestBody.continueSession || false,
 
 			// Permission & Security
 			permissionMode: requestBody.permissionMode || 'acceptEdits',
@@ -168,7 +206,9 @@ export async function handleClaudeCode(c: Context<App>): Promise<Response> {
 		// Skip API key validation since we're using auto-detect with LiteLLM router
 
 		// Get session-specific container instance
-		const containerId = requestBody.sessionId ? `claude-session-${requestBody.sessionId}` : 'claude-execution'
+		const containerId = requestBody.sessionId
+			? `claude-session-${requestBody.sessionId}`
+			: 'claude-execution'
 		const id = c.env.CLAUDE_CONTAINER.idFromName(containerId)
 		const container = c.env.CLAUDE_CONTAINER.get(id)
 

@@ -36,22 +36,48 @@ export function handleAgentWebSocket(c: Context<App>) {
 					const agentId = c.env.CLAUDE_CODE_AGENT.idFromName(`session-${sessionId}`)
 					const agent = c.env.CLAUDE_CODE_AGENT.get(agentId)
 
+					// Get initial state to track message count
+					const initialState = await agent.getState()
+					const initialMessageCount = initialState.messages ? initialState.messages.length : 0
+
 					// Process message through agent with session ID and model
 					await agent.processMessage(message.content, sessionId, message.model)
 
-					// Get the latest messages from agent state
-					const state = await agent.getState()
-					const messages = state.messages || []
+					// Wait for agent processing to complete by checking for new messages
+					// The agent adds both user message and assistant response to state
+					let attempts = 0
+					const maxAttempts = 10
+					let finalState = await agent.getState()
 
-					// Send the latest messages to WebSocket client
+					while (attempts < maxAttempts) {
+						finalState = await agent.getState()
+						const currentMessageCount = finalState.messages ? finalState.messages.length : 0
+
+						// Wait for at least 2 new messages (user + assistant)
+						if (currentMessageCount >= initialMessageCount + 2) {
+							break
+						}
+
+						// Wait a bit for processing to complete
+						await new Promise((resolve) => setTimeout(resolve, 500))
+						attempts++
+					}
+
+					// Send the latest assistant message to WebSocket client
+					const messages = finalState.messages || []
 					if (messages.length > 0) {
-						const latestMessage = messages[messages.length - 1]
-						if (latestMessage && latestMessage.content) {
+						// Get the last assistant message (not user message)
+						const assistantMessage = messages
+							.slice()
+							.reverse()
+							.find((msg) => msg.role === 'assistant')
+						if (assistantMessage && assistantMessage.content) {
 							ws.send(
 								JSON.stringify({
-									type: latestMessage.type || 'result',
-									content: latestMessage.content,
-									timestamp: latestMessage.timestamp,
+									type: assistantMessage.type || 'result',
+									content: assistantMessage.content,
+									timestamp: assistantMessage.timestamp,
+									session_id: finalState.claudeSession?.id || null, // Include session ID for client
 								})
 							)
 						}

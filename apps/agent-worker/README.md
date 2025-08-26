@@ -42,11 +42,13 @@ curl -X POST http://localhost:8788/claude-code \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Create a Python function to calculate fibonacci numbers",
+    "inputFormat": "text",
+    "outputFormat": "json",
     "model": "anthropic/claude-3.5-sonnet-latest",
-    "stream": false,
     "maxTurns": 5,
-    "systemPrompt": "You are a Python expert. Write clean, documented code.",
-    "verbose": true
+    "appendSystemPrompt": "You are a Python expert. Write clean, documented code.",
+    "verbose": true,
+    "allowedTools": ["Write", "Read", "Bash"]
   }'
 ```
 
@@ -60,27 +62,30 @@ HTTP Client (with sessionId)
 Cloudflare Worker
     ↓ Parse & validate request
 Session-Specific Container (claude-session-{sessionId})
-    ↓ Shared workspace (/workspace)
-Claude Code SDK (continueSession: true)
+    ↓ Shared workspace (/workspace)  
+Claude CLI Wrapper (--continue/--resume flags)
+    ↓ Direct CLI execution
+Claude Code CLI
     ↓ AI model calls
 LiteLLM Router → AI Models
 ```
 
 **Core Session Architecture**:
+
 - **Session ID**: Unique identifier for each user session (UUID)
 - **Per Session**: Each sessionId gets its own isolated container instance
 - **Per Container**: Container named `claude-session-{sessionId}` for isolation
 - **One Workspace**: All operations within a session use shared `/workspace` directory
-- **Auto Continue**: `continueSession: true` automatically maintains context and file state
+- **Auto Continue**: CLI wrapper uses working `--continue` and `--resume` flags to maintain context
 
 ### Key Principles
 
 1. **Session Isolation**: Each sessionId maps to a dedicated container instance
 2. **Workspace Persistence**: Shared `/workspace` directory maintains files across requests
-3. **Automatic Continuation**: Claude Code SDK automatically continues previous context
-4. **Environment Variables**: Only for LiteLLM router configuration
+3. **Automatic Continuation**: CLI wrapper maintains session context using proper CLI flags
+4. **Environment Variables**: Only for LiteLLM router configuration  
 5. **HTTP Parameters**: All Claude Code options come from request body
-6. **Direct Mapping**: Request parameters → SDK parameters (no transformation)
+6. **Direct Mapping**: Request parameters → CLI flags (proper flag translation)
 7. **Clean Separation**: API config vs request data
 
 ## Complete API Reference
@@ -89,39 +94,47 @@ LiteLLM Router → AI Models
 
 #### Required Parameters
 
+**Text Format (Default)**:
 | Parameter | Type     | Description                                            |
 | --------- | -------- | ------------------------------------------------------ |
 | `prompt`  | `string` | **Required.** The query or task to send to Claude Code |
 
+**Stream-JSON Format**:
+| Parameter | Type     | Description                                            |
+| --------- | -------- | ------------------------------------------------------ |
+| `messages` | `Array<{role: 'user'\|'assistant', content: Array<{type: 'text', text: string}>}>` | **Required.** Message array for client-side session management |
+
 #### API Configuration
 
-| Parameter | Type      | Default                      | Description                                    |
-| --------- | --------- | ---------------------------- | ---------------------------------------------- |
-| `model`   | `string`  | `"groq/openai/gpt-oss-120b"` | AI model (any LiteLLM-compatible model)        |
-| `stream`  | `boolean` | `false`                      | Enable real-time streaming responses           |
-| `verbose` | `boolean` | `false`                      | Include detailed logs and full message history |
+| Parameter      | Type      | Default                      | Description                                    |
+| -------------- | --------- | ---------------------------- | ---------------------------------------------- |
+| `inputFormat`  | `string`  | `"text"`                     | Input format: `"text"` or `"stream-json"`      |
+| `outputFormat` | `string`  | `"json"`                     | Output format: `"text"`, `"json"`, or `"stream-json"` |
+| `model`        | `string`  | `"groq/openai/gpt-oss-120b"` | AI model (any LiteLLM-compatible model)        |
+| `stream`       | `boolean` | `false`                      | Enable real-time streaming responses (deprecated - use `outputFormat`) |
+| `verbose`      | `boolean` | `false`                      | Include detailed logs and full message history |
 
 #### Claude Code SDK Parameters
 
 All Claude Code SDK parameters are supported directly. See [Claude Code SDK documentation](https://docs.anthropic.com/en/docs/claude-code/sdk#type-script) for complete reference.
 
-| Parameter                    | Type                                                          | Default               | Description                                        |
-| ---------------------------- | ------------------------------------------------------------- | --------------------- | -------------------------------------------------- |
-| `maxTurns`                   | `number`                                                      | `3`                   | Maximum conversation turns                         |
-| `systemPrompt`               | `string`                                                      | `""`                  | Custom system prompt (empty = Claude Code default) |
-| `appendSystemPrompt`         | `string`                                                      | `undefined`           | Additional context for system prompt               |
-| `allowedTools`               | `string[]`                                                    | `undefined`           | Specific tools to enable (undefined = all tools)   |
-| `disallowedTools`            | `string[]`                                                    | `undefined`           | Tools to disable                                   |
-| `sessionId`                  | `string`                                                      | `undefined`           | **Session ID for container isolation and auto-continue** |
+| Parameter                    | Type                                                          | Default               | Description                                                  |
+| ---------------------------- | ------------------------------------------------------------- | --------------------- | ------------------------------------------------------------ |
+| `maxTurns`                   | `number`                                                      | `3`                   | Maximum conversation turns                                   |
+| `systemPrompt`               | `string`                                                      | `""`                  | Custom system prompt (empty = Claude Code default)           |
+| `appendSystemPrompt`         | `string`                                                      | `undefined`           | Additional context for system prompt                         |
+| `allowedTools`               | `string[]`                                                    | `undefined`           | Specific tools to enable (undefined = all tools)             |
+| `disallowedTools`            | `string[]`                                                    | `undefined`           | Tools to disable                                             |
+| `sessionId`                  | `string`                                                      | `undefined`           | **Session ID for container isolation and auto-continue**     |
 | `continueSession`            | `boolean`                                                     | `false`               | Continue from previous session (auto-enabled with sessionId) |
-| `resumeSessionId`            | `string`                                                      | `undefined`           | Session ID to resume (legacy - use sessionId instead) |
-| `permissionMode`             | `"default" \| "acceptEdits" \| "plan" \| "bypassPermissions"` | `"bypassPermissions"` | Permission level                                   |
-| `permissionPromptTool`       | `string`                                                      | `undefined`           | Custom permission tool                             |
-| `mcpConfig`                  | `string`                                                      | `undefined`           | MCP server configuration                           |
-| `cwd`                        | `string`                                                      | `undefined`           | Working directory                                  |
-| `executable`                 | `string`                                                      | `undefined`           | Custom executable path                             |
-| `executableArgs`             | `string[]`                                                    | `undefined`           | Additional executable arguments                    |
-| `pathToClaudeCodeExecutable` | `string`                                                      | `undefined`           | Full path to Claude Code binary                    |
+| `resumeSessionId`            | `string`                                                      | `undefined`           | Session ID to resume (legacy - use sessionId instead)        |
+| `permissionMode`             | `"default" \| "acceptEdits" \| "plan" \| "bypassPermissions"` | `"bypassPermissions"` | Permission level                                             |
+| `permissionPromptTool`       | `string`                                                      | `undefined`           | Custom permission tool                                       |
+| `mcpConfig`                  | `object`                                                      | `undefined`           | **MCP server configuration JSON object** (automatically saved as `.mcp.json`) |
+| `cwd`                        | `string`                                                      | `undefined`           | Working directory                                            |
+| `executable`                 | `string`                                                      | `undefined`           | Custom executable path                                       |
+| `executableArgs`             | `string[]`                                                    | `undefined`           | Additional executable arguments                              |
+| `pathToClaudeCodeExecutable` | `string`                                                      | `undefined`           | Full path to Claude Code binary                              |
 
 ### Response Formats
 
@@ -264,7 +277,8 @@ curl -X POST http://localhost:8788/claude-code \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Help me analyze data",
-    "allowedTools": ["read_file", "write_file"],
+    "allowedTools": ["Read", "Write"],
+    "disallowedTools": ["Bash"],
     "permissionMode": "plan"
   }'
 ```
@@ -304,8 +318,71 @@ curl -X POST http://localhost:8788/claude-code \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Explain recursion in programming",
-    "stream": true,
+    "outputFormat": "stream-json",
     "verbose": true
+  }'
+```
+
+### Stream-JSON Input Format (Client-Side Session Management)
+
+```bash
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "inputFormat": "stream-json",
+    "outputFormat": "json",
+    "messages": [
+      {
+        "role": "user",
+        "content": [{
+          "type": "text",
+          "text": "What is the capital of France?"
+        }]
+      },
+      {
+        "role": "assistant", 
+        "content": [{
+          "type": "text",
+          "text": "The capital of France is Paris."
+        }]
+      },
+      {
+        "role": "user",
+        "content": [{
+          "type": "text",
+          "text": "What about Italy?"
+        }]
+      }
+    ],
+    "maxTurns": 5
+  }'
+```
+
+### MCP Server Configuration
+
+```bash
+curl -X POST http://localhost:8788/claude-code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "List files in the current directory",
+    "mcpConfig": {
+      "servers": {
+        "filesystem": {
+          "command": "node",
+          "args": ["/path/to/filesystem-server.js"],
+          "env": {
+            "ROOT_PATH": "/workspace"
+          }
+        },
+        "database": {
+          "command": "python",
+          "args": ["-m", "database_mcp_server"],
+          "env": {
+            "DB_URL": "sqlite:///workspace/data.db"
+          }
+        }
+      }
+    }
   }'
 ```
 
@@ -347,39 +424,24 @@ pnpm turbo check:types
 
 ## Known Issues
 
-### Session Continuity Not Working
+### Session Continuity Fixed ✅
 
-**Status**: ❌ **Critical Issue** - Session continuity is currently broken
+**Status**: ✅ **Resolved** - Session continuity now working with CLI wrapper approach
 
-**Symptoms**: 
-- Different session IDs returned for same `sessionId` parameter
-- Claude doesn't remember previous conversation context
-- `continueSession: true` has no effect
+**Solution**: Replaced broken TypeScript SDK with direct CLI execution using working `--continue` and `--resume` flags.
 
-**Investigation Results**:
-1. ✅ **Container Routing Works**: Same session ID correctly routes to same Docker container
-2. ✅ **Session Storage Works**: Session files are created in `/root/.claude/projects/-workspace/`
-3. ✅ **Container Persistence**: Same container is reused for same session ID
-4. ❌ **Claude Code SDK Issue**: SDK ignores provided `sessionId` and creates new internal session IDs
+**New Architecture**:
+- **CLI Wrapper**: Direct Claude CLI execution bypassing broken SDK
+- **Session Mapping**: HTTP sessionId → Claude CLI session ID mapping  
+- **Flag Support**: Working `--continue` and `--resume` flags
+- **File Creation**: Automatic `.mcp.json` file creation for MCP configuration
 
-**Evidence** (2025-08-25):
-```bash
-# Test calls with sessionId: "clean-test-123"
-# Call 1: sessionId: "clean-test-123" → Claude session: "d2d6e67e-cf13-4d7e-ad57-8926098ae7f4"
-# Call 2: sessionId: "clean-test-123" → Claude session: "a7ab8cf4-b251-49b5-91cd-b11aa07ee72d"
+**Previous Issues** (now resolved):
+- TypeScript SDK ignoring session continuation parameters
+- Session files not being properly detected in containerized environment  
+- `continueSession` and `resumeSessionId` parameters having no effect
 
-# Same container used: 640035df66ac
-# Different session files created in same container:
-# - d2d6e67e-cf13-4d7e-ad57-8926098ae7f4.jsonl
-# - a7ab8cf4-b251-49b5-91cd-b11aa07ee72d.jsonl
-```
-
-**Root Cause**: The Claude Code SDK is not properly using the provided `sessionId` parameter and `continueSession: true` flag. It creates new internal session IDs for each call instead of continuing existing sessions.
-
-**Next Steps**: 
-- Investigate Claude Code SDK session parameter handling
-- Verify correct session ID parameter format and options
-- Consider alternative session continuation approaches
+**Current Status**: Session continuity working via CLI wrapper with proper `--continue` and `--resume` flag support.
 
 ## Troubleshooting
 

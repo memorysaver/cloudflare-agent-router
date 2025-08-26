@@ -172,13 +172,13 @@ app.post('/', async (c) => {
   // 2. Simplified session management - shared workspace
   let sessionWorkspacePath = cwd || '/workspace'
   console.log(`📁 Using shared workspace: ${sessionWorkspacePath}`)
-  
+
   // Ensure shared workspace directory exists
   fs.mkdirSync(sessionWorkspacePath, { recursive: true })
 
   // 3. Configure Claude Code SDK options
   const options = {
-    systemPrompt: systemPrompt || '',  // Empty - let Claude Code use default
+    systemPrompt: systemPrompt || '', // Empty - let Claude Code use default
     maxTurns: maxTurns,
     allowedTools: allowedTools || undefined,
     permissionMode: permissionMode || 'acceptEdits',
@@ -245,11 +245,11 @@ interface AgentSessionState {
   // Claude Code specific state
   claudeSession: {
     id: string
-    workspacePath: string        // Always '/workspace'
+    workspacePath: string // Always '/workspace'
     lastCommand: string
     sessionFiles: string[]
     activeTools: string[]
-    preferredModel?: string      // Model selection persistence
+    preferredModel?: string // Model selection persistence
   }
 
   // Container management
@@ -302,7 +302,7 @@ Workspace: /workspace (shared across all requests)
 
 ```typescript
 // 1. Session request with sessionId
-const sessionId = "demo-abc123"
+const sessionId = 'demo-abc123'
 
 // 2. Get or create session-specific container
 const containerId = `claude-session-${sessionId}`
@@ -311,8 +311,8 @@ const container = env.CLAUDE_CONTAINER.get(env.CLAUDE_CONTAINER.idFromName(conta
 // 3. Execute with shared workspace and auto-continue
 const claudeOptions = {
   sessionId: sessionId,
-  continueSession: true,  // Always enabled for sessions
-  cwd: '/workspace',      // Shared workspace
+  continueSession: true, // Always enabled for sessions
+  cwd: '/workspace', // Shared workspace
 }
 
 // No renaming or temp folders needed - container persists for entire session

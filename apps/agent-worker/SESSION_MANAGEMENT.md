@@ -13,7 +13,7 @@ Container: claude-session-demo-abc123
     ↓ (shared workspace for all requests)
 Workspace: /workspace (persistent across requests)
     ↓ (automatic session continuation)
-Claude Code SDK: continueSession: true
+Claude CLI Wrapper: --continue/--resume flags
 ```
 
 ### Key Design Principles
@@ -42,16 +42,16 @@ Claude Code SDK: continueSession: true
 ```typescript
 export interface ClaudeCodeRequest {
   prompt: string
-  sessionId?: string              // Session ID for container isolation and auto-continue
+  sessionId?: string // Session ID for container isolation and auto-continue
   // ... all existing fields unchanged
-  continueSession?: boolean       // Auto-enabled when sessionId provided
-  cwd?: string                    // Overridden to /workspace for sessions
+  continueSession?: boolean // Auto-enabled when sessionId provided
+  cwd?: string // Overridden to /workspace for sessions
 }
 
 export interface ClaudeCodeResponse {
-  type: "result"
+  type: 'result'
   result: string
-  sessionId: string               // Session ID used
+  sessionId: string // Session ID used
   requestId: string
   // ... existing fields
 }
@@ -223,17 +223,21 @@ const sessionId = crypto.randomUUID() // "550e8400-e29b-41d4-a716-446655440000"
 const ws = new WebSocket(`ws://localhost:8788/demo/ws/${sessionId}`)
 
 // All messages in this session use the same container and workspace
-ws.send(JSON.stringify({
-  type: 'user_message',
-  content: 'Create a React component',
-  model: 'groq/openai/gpt-oss-120b'
-}))
+ws.send(
+  JSON.stringify({
+    type: 'user_message',
+    content: 'Create a React component',
+    model: 'groq/openai/gpt-oss-120b',
+  })
+)
 
 // Later messages in same session see previous files
-ws.send(JSON.stringify({
-  type: 'user_message',
-  content: 'Add TypeScript to the component'
-}))
+ws.send(
+  JSON.stringify({
+    type: 'user_message',
+    content: 'Add TypeScript to the component',
+  })
+)
 ```
 
 ## Troubleshooting
