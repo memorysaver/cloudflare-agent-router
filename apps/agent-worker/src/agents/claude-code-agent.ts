@@ -1,8 +1,9 @@
 import { Agent } from 'agents'
 
 import type { AgentContext } from 'agents'
-import type { ClaudeCodeOptions } from '../claude-container'
 import type { Env } from '../context'
+import { ClaudeCodeService } from '../services/claude-code.service'
+import type { ProcessedClaudeCodeOptions } from '../types/claude-code'
 
 /**
  * Message types for structured communication
@@ -48,7 +49,6 @@ export interface AgentSessionState {
  * while leveraging the existing ClaudeCodeContainer infrastructure.
  */
 export class ClaudeCodeAgent extends Agent<Env> {
-	private containerBridge: ClaudeContainerBridge
 	private outputParser: ClaudeOutputParser
 
 	// Type-safe state access
@@ -85,7 +85,6 @@ export class ClaudeCodeAgent extends Agent<Env> {
 
 	constructor(ctx: AgentContext, env: Env) {
 		super(ctx, env)
-		this.containerBridge = new ClaudeContainerBridge(env)
 		this.outputParser = new ClaudeOutputParser()
 	}
 
@@ -123,7 +122,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 
 			if (data.type === 'user_message' && data.content) {
 				// Process the user message with WebSocket connection for real-time responses
-				await this.processMessage(data.content, connection)
+				await this.processMessageLegacy(data.content)
 			}
 		} catch (error) {
 			console.error('ClaudeCodeAgent onMessage error:', error)
@@ -181,29 +180,29 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	}
 
 	/**
-	 * Process incoming user messages (for WebSocket calls)
+	 * Process incoming messages with full ClaudeCodeRequest options
 	 */
-	async processMessage(content: string, sessionId?: string, model?: string): Promise<void> {
-		console.log('Processing WebSocket message:', content)
+	async processMessage(options: ProcessedClaudeCodeOptions): Promise<void> {
+		console.log('Processing agent message:', options.prompt?.substring(0, 50) || 'No prompt')
 
 		// Update session ID if provided
-		if (sessionId) {
+		if (options.sessionId) {
 			this.setState({
 				...this.typedState,
 				claudeSession: {
 					...this.typedState.claudeSession,
-					id: sessionId,
+					id: options.sessionId,
 				},
 			})
 		}
 
 		// Store model preference if provided
-		if (model) {
+		if (options.model) {
 			this.setState({
 				...this.typedState,
 				claudeSession: {
 					...this.typedState.claudeSession,
-					preferredModel: model,
+					preferredModel: options.model,
 				},
 			})
 		}
@@ -217,20 +216,31 @@ export class ClaudeCodeAgent extends Agent<Env> {
 
 		try {
 			// Add user message to conversation history
+			const userContent = options.prompt || (options.messages?.[0]?.content?.[0]?.text) || 'No content'
 			const userMessage: AgentMessage = {
 				id: this.generateId(),
 				role: 'user',
-				content: content,
+				content: userContent,
 				type: 'result',
 				timestamp: Date.now(),
 			}
 			this.addMessageToState(userMessage)
 
-			// Execute Claude Code via container (use non-streaming for WebSocket since we wait for completion)
-			const executionResult = await this.containerBridge.executeNonStreaming(content, {
-				sessionId: this.getSessionId(),
-				model: this.getCurrentModel(),
-			})
+			// Execute Claude Code using shared service
+			const envVars = {
+				ANTHROPIC_AUTH_TOKEN: this.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
+				ANTHROPIC_BASE_URL: this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
+				ANTHROPIC_API_KEY: this.env.ANTHROPIC_API_KEY,
+				ANTHROPIC_MODEL: options.model,
+			}
+
+			// Create minimal context for service call
+			const context = {
+				env: this.env,
+				json: (data: any, status?: number) => ({ data, status }),
+			} as any
+
+			const executionResult = await ClaudeCodeService.executeNonStreaming(options, envVars, context)
 
 			// Process the single response and add to state
 			await this.processClaudeResponse(executionResult)
@@ -253,6 +263,31 @@ export class ClaudeCodeAgent extends Agent<Env> {
 				lastActivity: Date.now(),
 			})
 		}
+	}
+
+	/**
+	 * Legacy method for backward compatibility (WebSocket)
+	 */
+	async processMessageLegacy(content: string, sessionId?: string, model?: string): Promise<void> {
+		// Convert legacy parameters to ProcessedClaudeCodeOptions
+		const options: ProcessedClaudeCodeOptions = {
+			prompt: content,
+			sessionId: sessionId || this.getSessionId(),
+			model: model || this.getCurrentModel(),
+			// Apply defaults
+			inputFormat: 'text',
+			outputFormat: 'json',
+			stream: false,
+			verbose: false,
+			maxTurns: 10,
+			systemPrompt: '',
+			continueSession: true,
+			permissionMode: 'acceptEdits',
+			additionalArgs: [],
+		}
+
+		// Call new method
+		return await this.processMessage(options)
 	}
 
 	/**
@@ -415,106 +450,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	}
 }
 
-/**
- * Container Bridge - Interfaces with existing ClaudeCodeContainer
- */
-export class ClaudeContainerBridge {
-	private env: Env
-
-	constructor(env: Env) {
-		this.env = env
-	}
-
-	/**
-	 * Execute Claude Code with agent context (streaming)
-	 */
-	async execute(
-		prompt: string,
-		options: {
-			sessionId: string
-			model?: string
-		}
-	): Promise<ReadableStream> {
-		// Prepare Claude Code execution options
-		const claudeOptions: ClaudeCodeOptions = {
-			prompt,
-			model: options.model || 'groq/openai/gpt-oss-120b', // Use provided model or default
-			sessionId: options.sessionId, // Pass the demo session ID to Claude Code SDK
-			continueSession: true, // Always try to continue (let Claude Code handle it)
-			cwd: '/workspace', // Shared workspace
-			stream: true,
-			verbose: false,
-			maxTurns: 10,
-			permissionMode: 'acceptEdits',
-			systemPrompt: '', // Empty - let Claude Code use default
-		}
-
-		// Prepare environment variables
-		const envVars: Record<string, string> = {
-			ANTHROPIC_AUTH_TOKEN: this.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
-			ANTHROPIC_BASE_URL:
-				this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
-		}
-
-		if (this.env.ANTHROPIC_API_KEY) {
-			envVars.ANTHROPIC_API_KEY = this.env.ANTHROPIC_API_KEY
-		}
-
-		// Get session-specific container instance
-		const containerId = `claude-session-${options.sessionId}`
-		const id = this.env.CLAUDE_CONTAINER.idFromName(containerId)
-		const container = this.env.CLAUDE_CONTAINER.get(id)
-
-		// Execute and return stream
-		const response = await container.executeClaudeCode(claudeOptions, envVars)
-		return response.body!
-	}
-
-	/**
-	 * Execute Claude Code with agent context (non-streaming for WebSocket)
-	 */
-	async executeNonStreaming(
-		prompt: string,
-		options: {
-			sessionId: string
-			model?: string
-		}
-	): Promise<any> {
-		// Prepare Claude Code execution options (non-streaming)
-		const claudeOptions: ClaudeCodeOptions = {
-			prompt,
-			model: options.model || 'groq/openai/gpt-oss-120b',
-			sessionId: options.sessionId,
-			continueSession: true,
-			cwd: '/workspace',
-			stream: false, // Non-streaming for WebSocket
-			verbose: false,
-			maxTurns: 10,
-			permissionMode: 'acceptEdits',
-			systemPrompt: '',
-		}
-
-		// Prepare environment variables
-		const envVars: Record<string, string> = {
-			ANTHROPIC_AUTH_TOKEN: this.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
-			ANTHROPIC_BASE_URL:
-				this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
-		}
-
-		if (this.env.ANTHROPIC_API_KEY) {
-			envVars.ANTHROPIC_API_KEY = this.env.ANTHROPIC_API_KEY
-		}
-
-		// Get session-specific container instance
-		const containerId = `claude-session-${options.sessionId}`
-		const id = this.env.CLAUDE_CONTAINER.idFromName(containerId)
-		const container = this.env.CLAUDE_CONTAINER.get(id)
-
-		// Execute and return JSON response
-		const response = await container.executeClaudeCode(claudeOptions, envVars)
-		return await response.json()
-	}
-}
+// ClaudeContainerBridge removed - using shared ClaudeCodeService instead
 
 /**
  * Output Parser - Converts CLI output to structured messages

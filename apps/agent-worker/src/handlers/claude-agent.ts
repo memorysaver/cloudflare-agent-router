@@ -3,6 +3,8 @@ import { upgradeWebSocket } from 'hono/cloudflare-workers'
 import type { Context } from 'hono'
 import type { WSContext } from 'hono/ws'
 import type { App } from '../context'
+import { ClaudeCodeService } from '../services/claude-code.service'
+import type { AgentRequest, ClaudeCodeError } from '../types/claude-code'
 
 /**
  * WebSocket message types
@@ -41,7 +43,7 @@ export function handleAgentWebSocket(c: Context<App>) {
 					const initialMessageCount = initialState.messages ? initialState.messages.length : 0
 
 					// Process message through agent with session ID and model
-					await agent.processMessage(message.content, sessionId, message.model)
+					await agent.processMessageLegacy(message.content, sessionId, message.model)
 
 					// Wait for agent processing to complete by checking for new messages
 					// The agent adds both user message and assistant response to state
@@ -111,33 +113,68 @@ export function handleAgentWebSocket(c: Context<App>) {
  */
 export async function handleAgentMessage(c: Context<App>): Promise<Response> {
 	try {
-		const { message, sessionId } = await c.req.json()
-
-		if (!message) {
-			return c.json(
+		// Parse request body - supports both legacy and new formats
+		let requestBody: AgentRequest
+		try {
+			requestBody = await c.req.json()
+		} catch (error) {
+			return c.json<ClaudeCodeError>(
 				{
-					error: 'Missing message field',
+					error: 'Invalid request body',
+					message: 'Request body must be valid JSON',
+					details: error instanceof Error ? error.message : String(error),
 				},
 				400
 			)
 		}
 
-		// Get session-specific agent instance or default
-		const agentId = sessionId ? `session-${sessionId}` : 'claude-agent-default'
-		const agent = c.env.CLAUDE_CODE_AGENT.get(c.env.CLAUDE_CODE_AGENT.idFromName(agentId))
+		// Normalize agent request (handles legacy format)
+		const claudeRequest = ClaudeCodeService.normalizeAgentRequest(requestBody)
 
-		// Process message with optional session ID
-		await agent.processMessage(message, sessionId)
+		// Validate legacy format requirement
+		if ('message' in requestBody && !claudeRequest.prompt) {
+			return c.json<ClaudeCodeError>(
+				{
+					error: 'Missing message field',
+					message: 'Request must include a message field when using legacy format',
+				},
+				400
+			)
+		}
 
-		return c.json({
-			status: 'Message processed',
-			timestamp: Date.now(),
-		})
+		// Validate and process request using shared service
+		const validationResult = ClaudeCodeService.validateAndProcessRequest(claudeRequest)
+		if (!validationResult.success) {
+			return c.json<ClaudeCodeError>(validationResult.error, 400)
+		}
+
+		const options = validationResult.options
+
+		// Determine execution mode based on outputFormat
+		if (options.outputFormat === 'stream-json' && options.stream) {
+			// Streaming mode - return streaming response directly (like /claude-code)
+			const envVars = ClaudeCodeService.prepareEnvironment(c)
+			return await ClaudeCodeService.executeStreaming(options, envVars, c)
+		} else {
+			// Non-streaming mode - use agent persistence (current behavior)
+			const sessionId = options.sessionId || 'default'
+			const agentId = `session-${sessionId}`
+			const agent = c.env.CLAUDE_CODE_AGENT.get(c.env.CLAUDE_CODE_AGENT.idFromName(agentId))
+
+			// Process message through agent with full request options
+			await agent.processMessage(options)
+
+			return c.json({
+				status: 'Message processed',
+				timestamp: Date.now(),
+			})
+		}
 	} catch (error) {
 		console.error('❌ Agent message handler error:', error)
-		return c.json(
+		return c.json<ClaudeCodeError>(
 			{
-				error: 'Internal server error',
+				error: 'Claude Code execution failed',
+				message: 'Internal server error processing agent message request',
 				details: error instanceof Error ? error.message : String(error),
 			},
 			500
