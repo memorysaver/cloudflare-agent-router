@@ -1,29 +1,50 @@
 # Use Node.js slim base image for Claude Code SDK
 FROM node:20-slim
 
-# Set working directory
-WORKDIR /app
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Initialize package.json and install dependencies
-RUN npm init -y
+# Create a non-root user for Claude Code execution
+RUN groupadd --gid 1001 claudeuser && \
+    useradd --uid 1001 --gid claudeuser --shell /bin/bash --create-home claudeuser
 
-# Install Claude CLI globally and other dependencies
+# Install Claude CLI globally as root
 RUN npm install -g @anthropic-ai/claude-code && \
-    npm install --verbose hono @hono/node-server
+    which claude && \
+    ls -la /usr/local/bin/claude
+
+# Initialize package.json and install local dependencies
+WORKDIR /app
+RUN npm init -y && \
+    npm install hono @hono/node-server
 
 # Verify Claude CLI installation
 RUN claude --version
 
-# Create ~/.claude directory for Claude Code SDK session storage
+# Change ownership of /app to claudeuser
+RUN chown -R claudeuser:claudeuser /app
+
+# Switch to the non-root user
+USER claudeuser
+
+# Set up environment variables to include global npm binaries in PATH
+ENV PATH="/usr/local/lib/node_modules/.bin:/usr/local/bin:$PATH"
+
+# Create ~/.claude directory for Claude Code SDK session storage as claudeuser
 RUN mkdir -p ~/.claude/projects && \
     chmod 755 ~/.claude && \
     chmod 755 ~/.claude/projects
+
+# Create workspace directory with proper permissions
+RUN mkdir -p /home/claudeuser/workspace && \
+    chmod 755 /home/claudeuser/workspace
+
+# Verify Claude CLI is accessible as the non-root user
+RUN claude --version
 
 # Create the HTTP server that uses Claude CLI wrapper
 COPY claude-server.js ./claude-server.js

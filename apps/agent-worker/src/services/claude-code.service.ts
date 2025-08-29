@@ -109,7 +109,7 @@ export class ClaudeCodeService {
 			if (options.sessionId) {
 				// Auto-enable session resumption when sessionId provided
 				// Use shared workspace instead of session-specific directories
-				options.cwd = options.cwd || '/workspace'
+				options.cwd = options.cwd || '/home/claudeuser/workspace'
 			}
 
 			return {

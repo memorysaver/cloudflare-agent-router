@@ -97,6 +97,7 @@ class ClaudeCliWrapper {
 			flags.push('--verbose')
 		}
 
+		// Permission mode mapping - all modes use --permission-mode flag
 		if (options.permissionMode) {
 			flags.push('--permission-mode', options.permissionMode)
 		}
@@ -119,7 +120,8 @@ class ClaudeCliWrapper {
 			})
 		}
 
-		if (options.dangerouslySkipPermissions) {
+		// Additional dangerously skip permissions flag (if explicitly set separately)
+		if (options.dangerouslySkipPermissions && options.permissionMode !== 'bypassPermissions') {
 			flags.push('--dangerously-skip-permissions')
 		}
 
@@ -174,8 +176,8 @@ class ClaudeCliWrapper {
 			// Both main and preflight models must use LiteLLM-compatible models
 			ANTHROPIC_MODEL: options.model || 'groq/openai/gpt-oss-120b',
 			ANTHROPIC_SMALL_FAST_MODEL: options.fastModel || options.model || 'groq/openai/gpt-oss-120b',
-			// Working directory
-			PWD: options.cwd || '/workspace',
+			// Working directory - use claudeuser home workspace by default
+			PWD: options.cwd || '/home/claudeuser/workspace',
 		}
 	}
 

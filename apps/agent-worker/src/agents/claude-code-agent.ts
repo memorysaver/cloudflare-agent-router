@@ -72,7 +72,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 		lastActivity: Date.now(),
 		claudeSession: {
 			id: `session_${Date.now()}`,
-			workspacePath: '/workspace',
+			workspacePath: '/home/claudeuser/workspace',
 			lastCommand: '',
 			sessionFiles: [],
 			activeTools: [],
@@ -444,7 +444,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 	 * Get workspace path for session
 	 */
 	private getWorkspacePath(): string {
-		return '/workspace'
+		return '/home/claudeuser/workspace'
 	}
 
 	/**
