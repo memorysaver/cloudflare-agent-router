@@ -48,8 +48,10 @@ export interface ClaudeCodeRequest {
 	executableArgs?: string[] // Default: undefined
 	pathToClaudeCodeExecutable?: string // Default: undefined
 
-	// Legacy (for backward compatibility)
-	additionalArgs?: string[] // Deprecated - use executableArgs
+	// NEW: Additional CLI Options (Based on Tool Execution Success)
+	addDir?: string[] // Maps to --add-dir (multiple working directories)
+	dangerouslySkipPermissions?: boolean // Maps to --dangerously-skip-permissions
+	fastModel?: string // CRITICAL: For ANTHROPIC_SMALL_FAST_MODEL (defaults to model)
 }
 
 export interface ClaudeCodeError {
@@ -71,20 +73,6 @@ export interface ProcessedClaudeCodeOptions extends ClaudeCodeRequest {
 	permissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'
 	additionalArgs: string[]
 }
-
-/**
- * Legacy agent message format for backward compatibility
- */
-export interface LegacyAgentRequest {
-	message: string
-	sessionId?: string
-	permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'
-}
-
-/**
- * Unified agent request format (supports both legacy and new formats)
- */
-export type AgentRequest = LegacyAgentRequest | ClaudeCodeRequest
 
 /**
  * Environment variables for Claude Code execution

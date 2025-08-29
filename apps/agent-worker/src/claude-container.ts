@@ -1,5 +1,6 @@
 import { Container } from '@cloudflare/containers'
-import type { ProcessedClaudeCodeOptions, ClaudeCodeEnvVars } from './types/claude-code'
+
+import type { ClaudeCodeEnvVars, ProcessedClaudeCodeOptions } from './types/claude-code'
 
 // ClaudeCodeOptions interface removed - using shared types from ./types/claude-code.ts
 

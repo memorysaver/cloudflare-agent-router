@@ -1,13 +1,14 @@
 import { upgradeWebSocket } from 'hono/cloudflare-workers'
 
+import { ClaudeCodeService } from '../services/claude-code.service'
+
 import type { Context } from 'hono'
 import type { WSContext } from 'hono/ws'
 import type { App } from '../context'
-import { ClaudeCodeService } from '../services/claude-code.service'
-import type { AgentRequest, ClaudeCodeError } from '../types/claude-code'
+import type { ClaudeCodeError, ClaudeCodeRequest } from '../types/claude-code'
 
 /**
- * WebSocket message types
+ * WebSocket message types - Enhanced to support all Claude Code parameters
  */
 interface WSMessage {
 	type: 'user_message' | 'agent_response' | 'error' | 'status'
@@ -15,6 +16,15 @@ interface WSMessage {
 	model?: string
 	data?: unknown
 	timestamp?: number
+
+	// Enhanced Claude Code parameters (matching demo interface)
+	fastModel?: string
+	allowedTools?: string[]
+	disallowedTools?: string[]
+	permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'
+	maxTurns?: number
+	dangerouslySkipPermissions?: boolean
+	addDir?: string[]
 }
 
 /**
@@ -34,6 +44,38 @@ export function handleAgentWebSocket(c: Context<App>) {
 				console.log(`📨 Received WebSocket message for session ${sessionId}:`, message)
 
 				if (message.type === 'user_message' && message.content) {
+					// Create ClaudeCodeRequest from WebSocket message (following unified design)
+					const claudeRequest = {
+						prompt: message.content,
+						sessionId: sessionId,
+						model: message.model,
+						fastModel: message.fastModel,
+						allowedTools: message.allowedTools,
+						disallowedTools: message.disallowedTools,
+						permissionMode: message.permissionMode,
+						maxTurns: message.maxTurns,
+						dangerouslySkipPermissions: message.dangerouslySkipPermissions,
+						addDir: message.addDir,
+						// Force non-streaming for agent persistence
+						outputFormat: 'json' as const,
+						stream: false,
+					}
+
+					// Validate and process request using shared service (unified architecture)
+					const validationResult = ClaudeCodeService.validateAndProcessRequest(claudeRequest)
+					if (!validationResult.success) {
+						ws.send(
+							JSON.stringify({
+								type: 'error',
+								content: validationResult.error.message,
+								timestamp: Date.now(),
+							})
+						)
+						return
+					}
+
+					const options = validationResult.options
+
 					// Get session-specific agent instance
 					const agentId = c.env.CLAUDE_CODE_AGENT.idFromName(`session-${sessionId}`)
 					const agent = c.env.CLAUDE_CODE_AGENT.get(agentId)
@@ -42,8 +84,8 @@ export function handleAgentWebSocket(c: Context<App>) {
 					const initialState = await agent.getState()
 					const initialMessageCount = initialState.messages ? initialState.messages.length : 0
 
-					// Process message through agent with session ID and model
-					await agent.processMessageLegacy(message.content, sessionId, message.model)
+					// Process message through agent with FULL options (unified architecture)
+					await agent.processMessage(options)
 
 					// Wait for agent processing to complete by checking for new messages
 					// The agent adds both user message and assistant response to state
@@ -113,30 +155,16 @@ export function handleAgentWebSocket(c: Context<App>) {
  */
 export async function handleAgentMessage(c: Context<App>): Promise<Response> {
 	try {
-		// Parse request body - supports both legacy and new formats
-		let requestBody: AgentRequest
+		// Parse request body
+		let claudeRequest: ClaudeCodeRequest
 		try {
-			requestBody = await c.req.json()
+			claudeRequest = await c.req.json()
 		} catch (error) {
 			return c.json<ClaudeCodeError>(
 				{
 					error: 'Invalid request body',
 					message: 'Request body must be valid JSON',
 					details: error instanceof Error ? error.message : String(error),
-				},
-				400
-			)
-		}
-
-		// Normalize agent request (handles legacy format)
-		const claudeRequest = ClaudeCodeService.normalizeAgentRequest(requestBody)
-
-		// Validate legacy format requirement
-		if ('message' in requestBody && !claudeRequest.prompt) {
-			return c.json<ClaudeCodeError>(
-				{
-					error: 'Missing message field',
-					message: 'Request must include a message field when using legacy format',
 				},
 				400
 			)

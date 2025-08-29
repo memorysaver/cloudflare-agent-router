@@ -219,15 +219,16 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 					<div class="flex items-center space-x-2">
 						<div>
 							<p class="text-xs font-medium text-gray-500">Model</p>
-							<p id="current-model" class="text-sm font-semibold text-purple-700">groq/openai/gpt-oss-120b</p>
+							<p id="current-model" class="text-sm font-semibold text-purple-700">openrouter/qwen/qwen3-coder</p>
 						</div>
 						<select id="model-dropdown" onchange="changeModel()" class="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 min-w-[160px]">
 							<option value="groq/openai/gpt-oss-120b">Groq GPT-OSS-120B</option>
 							<option value="groq/openai/gpt-oss-20b">Groq GPT-OSS-20B</option>
 							<option value="groq/moonshotai/kimi-k2-instruct">Groq Kimi K2 Instruct</option>
-							<option value="openrouter/z-ai/glm-4.5-air">OpenRouter GLM-4.5-Air</option>
-							<option value="openrouter/z-ai/glm-4.5">OpenRouter GLM-4.5</option>
+							<option value="openrouter/deepseek/deepseek-chat-v3.1">OpenRouter DeepSeek Chat v3.1</option>
 							<option value="openrouter/qwen/qwen3-coder">OpenRouter Qwen3 Coder</option>
+							<option value="openrouter/z-ai/glm-4.5">OpenRouter GLM-4.5</option>
+							<option value="openrouter/z-ai/glm-4.5-air">OpenRouter GLM-4.5-Air</option>
 						</select>
 					</div>
 				</div>
@@ -246,6 +247,12 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 						</svg>
 						New
 					</a>
+					<button onclick="toggleAdvancedConfig()" class="hover-scale inline-flex items-center px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium transition-all duration-200 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+						<svg class="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+						</svg>
+						Config
+					</button>
 				</div>
 			</div>
 
@@ -292,12 +299,111 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 							<option value="groq/openai/gpt-oss-120b">Groq GPT-OSS-120B</option>
 							<option value="groq/openai/gpt-oss-20b">Groq GPT-OSS-20B</option>
 							<option value="groq/moonshotai/kimi-k2-instruct">Groq Kimi K2 Instruct</option>
-							<option value="openrouter/z-ai/glm-4.5-air">OpenRouter GLM-4.5-Air</option>
-							<option value="openrouter/z-ai/glm-4.5">OpenRouter GLM-4.5</option>
+							<option value="openrouter/deepseek/deepseek-chat-v3.1">OpenRouter DeepSeek Chat v3.1</option>
 							<option value="openrouter/qwen/qwen3-coder">OpenRouter Qwen3 Coder</option>
+							<option value="openrouter/z-ai/glm-4.5">OpenRouter GLM-4.5</option>
+							<option value="openrouter/z-ai/glm-4.5-air">OpenRouter GLM-4.5-Air</option>
 						</select>
 					</div>
 				</div>
+			</div>
+		</div>
+
+		<!-- Advanced Configuration Panel -->
+		<div id="advanced-config" class="hidden glass-effect rounded-2xl shadow-lg border border-white/20 p-6 space-y-6">
+			<div class="flex items-center space-x-3 mb-4">
+				<div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+					<svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+					</svg>
+				</div>
+				<h3 class="text-lg font-semibold text-gray-800">Advanced Configuration</h3>
+			</div>
+
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+				<!-- Tool Configuration -->
+				<div class="space-y-4">
+					<h4 class="text-md font-medium text-gray-700 flex items-center">
+						<svg class="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+						</svg>
+						Available Tools
+					</h4>
+					<div class="grid grid-cols-2 gap-2">
+						<label class="flex items-center space-x-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+							<input type="checkbox" id="tool-webfetch" value="WebFetch" checked class="text-blue-600 focus:ring-blue-500">
+							<span class="text-sm text-gray-700">WebFetch</span>
+						</label>
+						<label class="flex items-center space-x-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+							<input type="checkbox" id="tool-bash" value="Bash" class="text-blue-600 focus:ring-blue-500">
+							<span class="text-sm text-gray-700">Bash</span>
+						</label>
+						<label class="flex items-center space-x-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+							<input type="checkbox" id="tool-read" value="Read" checked class="text-blue-600 focus:ring-blue-500">
+							<span class="text-sm text-gray-700">Read</span>
+						</label>
+						<label class="flex items-center space-x-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+							<input type="checkbox" id="tool-write" value="Write" checked class="text-blue-600 focus:ring-blue-500">
+							<span class="text-sm text-gray-700">Write</span>
+						</label>
+						<label class="flex items-center space-x-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+							<input type="checkbox" id="tool-edit" value="Edit" checked class="text-blue-600 focus:ring-blue-500">
+							<span class="text-sm text-gray-700">Edit</span>
+						</label>
+						<label class="flex items-center space-x-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+							<input type="checkbox" id="tool-grep" value="Grep" checked class="text-blue-600 focus:ring-blue-500">
+							<span class="text-sm text-gray-700">Grep</span>
+						</label>
+					</div>
+				</div>
+
+				<!-- Permission and Advanced Settings -->
+				<div class="space-y-4">
+					<h4 class="text-md font-medium text-gray-700 flex items-center">
+						<svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.031 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+						</svg>
+						Security & Permissions
+					</h4>
+					<div class="space-y-3">
+						<div>
+							<label class="block text-sm font-medium text-gray-700 mb-2">Permission Mode</label>
+							<select id="permission-mode" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200">
+								<option value="acceptEdits">Accept Edits (Safe)</option>
+								<option value="bypassPermissions">Bypass Permissions (Auto-Execute)</option>
+								<option value="plan">Plan Mode (No Execution)</option>
+								<option value="default">Default</option>
+							</select>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700 mb-2">Max Turns</label>
+							<input type="number" id="max-turns" value="3" min="1" max="10" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-700 mb-2">Fast Model (Optional)</label>
+							<select id="fast-model" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200">
+								<option value="">Same as Main Model (Recommended)</option>
+								<option value="claude-3-5-haiku-20241022">Claude Haiku (Faster)</option>
+								<option value="openrouter/qwen/qwen3-coder">Qwen3 Coder</option>
+							</select>
+						</div>
+						<div>
+							<label class="flex items-center space-x-2 p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
+								<input type="checkbox" id="dangerous-skip-permissions" class="text-red-600 focus:ring-red-500">
+								<span class="text-sm text-gray-700">Dangerously Skip Permissions (Expert Mode)</span>
+							</label>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="flex justify-between items-center pt-4 border-t border-gray-200">
+				<div class="text-sm text-gray-500">
+					Configuration will be applied to new messages
+				</div>
+				<button onclick="resetAdvancedConfig()" class="px-4 py-2 bg-gray-500 text-white rounded-lg text-sm font-medium transition-all duration-200 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+					Reset to Defaults
+				</button>
 			</div>
 		</div>
 
@@ -370,7 +476,7 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 		let ws = null;
 		let isConnected = false;
 		const sessionId = '${sessionId}';
-		let currentModel = localStorage.getItem(\`model_\${sessionId}\`) || 'groq/openai/gpt-oss-120b';
+		let currentModel = localStorage.getItem(\`model_\${sessionId}\`) || 'openrouter/qwen/qwen3-coder';
 
 		const statusEl = document.getElementById('status');
 		const statusTextEl = document.getElementById('status-text');
@@ -428,6 +534,67 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 			if (modelDropdown) modelDropdown.value = currentModel;
 			if (modelDropdownMobile) modelDropdownMobile.value = currentModel;
 			if (currentModelEl) currentModelEl.textContent = currentModel;
+		}
+
+		function toggleAdvancedConfig() {
+			const configPanel = document.getElementById('advanced-config');
+			if (configPanel.classList.contains('hidden')) {
+				configPanel.classList.remove('hidden');
+				configPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			} else {
+				configPanel.classList.add('hidden');
+			}
+		}
+
+		function getSelectedTools() {
+			const tools = [];
+			const toolCheckboxes = document.querySelectorAll('#advanced-config input[type="checkbox"][id^="tool-"]');
+			toolCheckboxes.forEach(checkbox => {
+				if (checkbox.checked) {
+					tools.push(checkbox.value);
+				}
+			});
+			return tools;
+		}
+
+		function getAdvancedConfig() {
+			const permissionMode = document.getElementById('permission-mode').value;
+			const maxTurns = parseInt(document.getElementById('max-turns').value);
+			const fastModel = document.getElementById('fast-model').value;
+			const dangerouslySkipPermissions = document.getElementById('dangerous-skip-permissions').checked;
+			const allowedTools = getSelectedTools();
+			
+			return {
+				permissionMode: permissionMode !== 'default' ? permissionMode : undefined,
+				maxTurns: maxTurns !== 3 ? maxTurns : undefined,
+				fastModel: fastModel || undefined,
+				dangerouslySkipPermissions: dangerouslySkipPermissions || undefined,
+				allowedTools: allowedTools.length > 0 ? allowedTools : undefined
+			};
+		}
+
+		function resetAdvancedConfig() {
+			// Reset permission mode
+			document.getElementById('permission-mode').value = 'acceptEdits';
+			
+			// Reset max turns
+			document.getElementById('max-turns').value = '3';
+			
+			// Reset fast model
+			document.getElementById('fast-model').value = '';
+			
+			// Reset dangerous skip permissions
+			document.getElementById('dangerous-skip-permissions').checked = false;
+			
+			// Reset tool selections to defaults
+			document.getElementById('tool-webfetch').checked = true;
+			document.getElementById('tool-bash').checked = false;
+			document.getElementById('tool-read').checked = true;
+			document.getElementById('tool-write').checked = true;
+			document.getElementById('tool-edit').checked = true;
+			document.getElementById('tool-grep').checked = true;
+			
+			addStatusMessage('Configuration reset to defaults', false);
 		}
 
 		function updateStatus(text, isError = false, addToChat = false) {
@@ -625,13 +792,24 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 				addMessage(content, 'user', 'message');
 			}
 
-			// Send to agent with model parameter
-			ws.send(JSON.stringify({
+			// Send to agent with model parameter and advanced configuration
+			const advancedConfig = getAdvancedConfig();
+			const message = {
 				type: 'user_message',
 				content: content,
 				model: currentModel,
-				timestamp: Date.now()
-			}));
+				timestamp: Date.now(),
+				...advancedConfig
+			};
+			
+			// Remove undefined fields
+			Object.keys(message).forEach(key => {
+				if (message[key] === undefined) {
+					delete message[key];
+				}
+			});
+			
+			ws.send(JSON.stringify(message));
 
 			// Show typing indicator
 			const typingEl = document.createElement('div');

@@ -1,8 +1,9 @@
 import { Agent } from 'agents'
 
+import { ClaudeCodeService } from '../services/claude-code.service'
+
 import type { AgentContext } from 'agents'
 import type { Env } from '../context'
-import { ClaudeCodeService } from '../services/claude-code.service'
 import type { ProcessedClaudeCodeOptions } from '../types/claude-code'
 
 /**
@@ -121,8 +122,23 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			const data = typeof message.data === 'string' ? JSON.parse(message.data) : message.data
 
 			if (data.type === 'user_message' && data.content) {
-				// Process the user message with WebSocket connection for real-time responses
-				await this.processMessageLegacy(data.content)
+				// Process the user message with full ClaudeCodeRequest options
+				const options: ProcessedClaudeCodeOptions = {
+					prompt: data.content,
+					sessionId: this.getSessionId(),
+					model: this.getCurrentModel(),
+					// Apply defaults
+					inputFormat: 'text',
+					outputFormat: 'json',
+					stream: false,
+					verbose: false,
+					maxTurns: 10,
+					systemPrompt: '',
+					continueSession: true,
+					permissionMode: 'acceptEdits',
+					additionalArgs: [],
+				}
+				await this.processMessage(options)
 			}
 		} catch (error) {
 			console.error('ClaudeCodeAgent onMessage error:', error)
@@ -152,19 +168,40 @@ export class ClaudeCodeAgent extends Agent<Env> {
 		})
 
 		try {
-			// Execute Claude Code via container
-			const executionStream = await this.containerBridge.execute(content, {
+			// Create ProcessedClaudeCodeOptions for the request
+			const options: ProcessedClaudeCodeOptions = {
+				prompt: content,
 				sessionId: this.getSessionId(),
 				model: this.getCurrentModel(),
-			})
+				// Apply defaults
+				inputFormat: 'text',
+				outputFormat: 'stream-json',
+				stream: true,
+				verbose: false,
+				maxTurns: 10,
+				systemPrompt: '',
+				continueSession: true,
+				permissionMode: 'acceptEdits',
+				additionalArgs: [],
+			}
 
-			// Create a streaming response
-			return new Response(executionStream, {
-				headers: {
-					'Content-Type': 'text/plain; charset=utf-8',
-					'Transfer-Encoding': 'chunked',
-				},
-			})
+			// Prepare environment variables
+			const envVars = {
+				ANTHROPIC_AUTH_TOKEN: this.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
+				ANTHROPIC_BASE_URL:
+					this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
+				ANTHROPIC_API_KEY: this.env.ANTHROPIC_API_KEY,
+				ANTHROPIC_MODEL: options.model,
+			}
+
+			// Create minimal context for service call
+			const context = {
+				env: this.env,
+				json: (data: any, status?: number) => ({ data, status }),
+			} as any
+
+			// Execute using shared service in streaming mode
+			return await ClaudeCodeService.executeStreaming(options, envVars, context)
 		} catch (error) {
 			console.error('ClaudeCodeAgent processMessageRequest error:', error)
 			return new Response(`Error: ${error instanceof Error ? error.message : String(error)}`, {
@@ -216,7 +253,8 @@ export class ClaudeCodeAgent extends Agent<Env> {
 
 		try {
 			// Add user message to conversation history
-			const userContent = options.prompt || (options.messages?.[0]?.content?.[0]?.text) || 'No content'
+			const userContent =
+				options.prompt || options.messages?.[0]?.content?.[0]?.text || 'No content'
 			const userMessage: AgentMessage = {
 				id: this.generateId(),
 				role: 'user',
@@ -229,7 +267,8 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			// Execute Claude Code using shared service
 			const envVars = {
 				ANTHROPIC_AUTH_TOKEN: this.env.ANTHROPIC_AUTH_TOKEN || 'auto-detect',
-				ANTHROPIC_BASE_URL: this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
+				ANTHROPIC_BASE_URL:
+					this.env.ANTHROPIC_BASE_URL || 'https://litellm-router.memorysaver.workers.dev',
 				ANTHROPIC_API_KEY: this.env.ANTHROPIC_API_KEY,
 				ANTHROPIC_MODEL: options.model,
 			}
@@ -263,31 +302,6 @@ export class ClaudeCodeAgent extends Agent<Env> {
 				lastActivity: Date.now(),
 			})
 		}
-	}
-
-	/**
-	 * Legacy method for backward compatibility (WebSocket)
-	 */
-	async processMessageLegacy(content: string, sessionId?: string, model?: string): Promise<void> {
-		// Convert legacy parameters to ProcessedClaudeCodeOptions
-		const options: ProcessedClaudeCodeOptions = {
-			prompt: content,
-			sessionId: sessionId || this.getSessionId(),
-			model: model || this.getCurrentModel(),
-			// Apply defaults
-			inputFormat: 'text',
-			outputFormat: 'json',
-			stream: false,
-			verbose: false,
-			maxTurns: 10,
-			systemPrompt: '',
-			continueSession: true,
-			permissionMode: 'acceptEdits',
-			additionalArgs: [],
-		}
-
-		// Call new method
-		return await this.processMessage(options)
 	}
 
 	/**
@@ -366,7 +380,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 				console.log(`🔄 Turns: ${response.num_turns}`)
 			}
 		} else if (response && response.content) {
-			// Legacy format support (in case of old responses)
+			// Alternative response format
 			const assistantMessage: AgentMessage = {
 				id: this.generateId(),
 				role: 'assistant',
@@ -376,7 +390,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			}
 
 			this.addMessageToState(assistantMessage)
-			console.log('Added assistant message to state (legacy format):', assistantMessage)
+			console.log('Added assistant message to state (alternative format):', assistantMessage)
 		} else {
 			console.warn('Unexpected Claude response format:', response)
 

@@ -112,6 +112,17 @@ class ClaudeCliWrapper {
 			flags.push('--disallowedTools', options.disallowedTools.join(','))
 		}
 
+		// NEW: Additional CLI Options (Based on Tool Execution Success)
+		if (options.addDir && options.addDir.length > 0) {
+			options.addDir.forEach((dir) => {
+				flags.push('--add-dir', dir)
+			})
+		}
+
+		if (options.dangerouslySkipPermissions) {
+			flags.push('--dangerously-skip-permissions')
+		}
+
 		// MCP configuration - handle JSON object by creating .mcp.json file
 		if (options.mcpConfig) {
 			// The mcpConfig will be handled during execution to create .mcp.json file
@@ -120,6 +131,12 @@ class ClaudeCliWrapper {
 
 		if (options.permissionPromptTool) {
 			flags.push('--permission-prompt-tool', options.permissionPromptTool)
+		}
+
+		// Model specification (CRITICAL FIX for tool authentication)
+		// This ensures Claude CLI uses the correct model for all operations including tool pre-flight checks
+		if (options.model) {
+			flags.push('--model', options.model)
 		}
 
 		// Output format (prefer outputFormat over deprecated stream flag)
@@ -153,8 +170,10 @@ class ClaudeCliWrapper {
 			ANTHROPIC_BASE_URL: envVars.ANTHROPIC_BASE_URL,
 			ANTHROPIC_AUTH_TOKEN: envVars.ANTHROPIC_AUTH_TOKEN,
 			ANTHROPIC_API_KEY: envVars.ANTHROPIC_API_KEY,
-			// Model configuration
+			// CRITICAL: Smart model configuration for tool success
+			// Both main and preflight models must use LiteLLM-compatible models
 			ANTHROPIC_MODEL: options.model || 'groq/openai/gpt-oss-120b',
+			ANTHROPIC_SMALL_FAST_MODEL: options.fastModel || options.model || 'groq/openai/gpt-oss-120b',
 			// Working directory
 			PWD: options.cwd || '/workspace',
 		}

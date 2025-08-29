@@ -1,11 +1,10 @@
 import type { Context } from 'hono'
 import type { App } from '../context'
 import type {
-	ClaudeCodeRequest,
-	ClaudeCodeError,
-	ProcessedClaudeCodeOptions,
 	ClaudeCodeEnvVars,
-	LegacyAgentRequest,
+	ClaudeCodeError,
+	ClaudeCodeRequest,
+	ProcessedClaudeCodeOptions,
 } from '../types/claude-code'
 
 /**
@@ -14,34 +13,17 @@ import type {
  */
 export class ClaudeCodeService {
 	/**
-	 * Convert legacy agent request to unified ClaudeCodeRequest format
-	 */
-	static normalizeAgentRequest(body: any): ClaudeCodeRequest {
-		// Check if this is legacy format {message, sessionId}
-		if (body.message && typeof body.message === 'string' && !body.prompt && !body.messages) {
-			const legacyRequest = body as LegacyAgentRequest
-			return {
-				prompt: legacyRequest.message,
-				sessionId: legacyRequest.sessionId,
-				permissionMode: legacyRequest.permissionMode || 'acceptEdits',
-				// Apply other defaults (will be handled by validateAndProcessRequest)
-			}
-		}
-
-		// New format - use as-is
-		return body as ClaudeCodeRequest
-	}
-
-	/**
 	 * Validate request and apply defaults to create ProcessedClaudeCodeOptions
 	 */
-	static validateAndProcessRequest(request: ClaudeCodeRequest): {
-		success: true
-		options: ProcessedClaudeCodeOptions
-	} | {
-		success: false
-		error: ClaudeCodeError
-	} {
+	static validateAndProcessRequest(request: ClaudeCodeRequest):
+		| {
+				success: true
+				options: ProcessedClaudeCodeOptions
+		  }
+		| {
+				success: false
+				error: ClaudeCodeError
+		  } {
 		try {
 			// Validate required fields based on input format
 			const inputFormat = request.inputFormat || 'text'
@@ -80,11 +62,10 @@ export class ClaudeCodeService {
 
 				// Format Configuration
 				inputFormat: inputFormat,
-				outputFormat:
-					request.outputFormat || (request.stream !== false ? 'stream-json' : 'json'),
+				outputFormat: request.outputFormat || (request.stream !== false ? 'stream-json' : 'json'),
 
 				// API Configuration with user's preferred defaults
-				model: request.model || 'groq/openai/gpt-oss-120b',
+				model: request.model || 'openrouter/qwen/qwen3-coder',
 				stream: request.stream !== false, // Keep for compatibility
 				verbose: request.verbose || false,
 
@@ -115,8 +96,13 @@ export class ClaudeCodeService {
 				executableArgs: request.executableArgs,
 				pathToClaudeCodeExecutable: request.pathToClaudeCodeExecutable,
 
-				// Legacy support
-				additionalArgs: request.additionalArgs || request.executableArgs || [],
+				// NEW: Additional CLI Options (Based on Tool Execution Success)
+				addDir: request.addDir,
+				dangerouslySkipPermissions: request.dangerouslySkipPermissions || false,
+				fastModel: request.fastModel, // For ANTHROPIC_SMALL_FAST_MODEL
+
+				// CLI arguments support
+				additionalArgs: request.executableArgs || [],
 			}
 
 			// Session Management - simplified for shared workspace architecture
@@ -186,7 +172,9 @@ export class ClaudeCodeService {
 		console.log(`🤖 Session ID: ${options.sessionId || '[None]'}`)
 
 		// Get session-specific container instance
-		const containerId = options.sessionId ? `claude-session-${options.sessionId}` : 'claude-execution'
+		const containerId = options.sessionId
+			? `claude-session-${options.sessionId}`
+			: 'claude-execution'
 		const id = context.env.CLAUDE_CONTAINER.idFromName(containerId)
 		const container = context.env.CLAUDE_CONTAINER.get(id)
 
