@@ -277,7 +277,7 @@ export class ClaudeCodeAgent extends Agent<Env> {
 			// Debug: Check what's available in agent environment
 			console.log('🔍 Agent env keys:', Object.keys(this.env))
 			console.log('🔍 CLAUDE_CONTAINER available:', !!this.env.CLAUDE_CONTAINER)
-			
+
 			// Create proper context with container bindings for service call
 			const context = {
 				env: this.env, // This should include CLAUDE_CONTAINER binding
