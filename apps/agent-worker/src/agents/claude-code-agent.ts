@@ -194,10 +194,11 @@ export class ClaudeCodeAgent extends Agent<Env> {
 				ANTHROPIC_MODEL: options.model,
 			}
 
-			// Create minimal context for service call
+			// Create proper context with container bindings for service call
 			const context = {
-				env: this.env,
+				env: this.env, // This should include CLAUDE_CONTAINER binding
 				json: (data: any, status?: number) => ({ data, status }),
+				req: { header: () => undefined }, // Minimal request object
 			} as any
 
 			// Execute using shared service in streaming mode
@@ -273,10 +274,15 @@ export class ClaudeCodeAgent extends Agent<Env> {
 				ANTHROPIC_MODEL: options.model,
 			}
 
-			// Create minimal context for service call
+			// Debug: Check what's available in agent environment
+			console.log('🔍 Agent env keys:', Object.keys(this.env))
+			console.log('🔍 CLAUDE_CONTAINER available:', !!this.env.CLAUDE_CONTAINER)
+			
+			// Create proper context with container bindings for service call
 			const context = {
-				env: this.env,
+				env: this.env, // This should include CLAUDE_CONTAINER binding
 				json: (data: any, status?: number) => ({ data, status }),
+				req: { header: () => undefined }, // Minimal request object
 			} as any
 
 			const executionResult = await ClaudeCodeService.executeNonStreaming(options, envVars, context)

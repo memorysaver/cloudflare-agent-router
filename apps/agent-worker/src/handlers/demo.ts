@@ -369,8 +369,8 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 						<div>
 							<label class="block text-sm font-medium text-gray-700 mb-2">Permission Mode</label>
 							<select id="permission-mode" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200">
-								<option value="acceptEdits">Accept Edits (Safe)</option>
 								<option value="bypassPermissions">Bypass Permissions (Auto-Execute)</option>
+								<option value="acceptEdits">Accept Edits (Safe)</option>
 								<option value="plan">Plan Mode (No Execution)</option>
 								<option value="default">Default</option>
 							</select>
@@ -575,7 +575,7 @@ export async function handleDemo(c: Context<App>): Promise<Response> {
 
 		function resetAdvancedConfig() {
 			// Reset permission mode
-			document.getElementById('permission-mode').value = 'acceptEdits';
+			document.getElementById('permission-mode').value = 'bypassPermissions';
 			
 			// Reset max turns
 			document.getElementById('max-turns').value = '3';
