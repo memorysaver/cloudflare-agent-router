@@ -31,11 +31,7 @@
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["ClaudeCodeContainer"]
-		},
-		{
-			"tag": "v2",
-			"new_sqlite_classes": ["ClaudeCodeAgent"]
+			"new_sqlite_classes": ["ClaudeCodeContainer", "ClaudeCodeAgent"]
 		}
 	],
 	"vars": {
